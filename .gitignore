@@ -4,6 +4,7 @@ node_modules/
 # Builds e arquivos gerados pelo Next.js
 .next/
 out/
+backend/data/
 
 # Variáveis de ambiente e configurações locais
 .env

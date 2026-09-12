@@ -131,6 +131,7 @@ function Header({ dark, onToggle }: { dark: boolean; onToggle: () => void }) {
           <Icon name="instagram" size={17} />
         </a>
         <ThemeToggle dark={dark} onToggle={onToggle} />
+        <a className="login-entry" href="/login">Entrar</a>
         <ButtonLink href="#contato" className="header-cta">Fale conosco <Icon name="arrow" size={17} strokeWidth={2} /></ButtonLink>
         <button className="mobile-btn" type="button" onClick={() => setMenuOpen((value) => !value)} aria-label="Abrir menu" aria-expanded={menuOpen}>
           <Icon name={menuOpen ? "plus" : "menu"} size={20} />
