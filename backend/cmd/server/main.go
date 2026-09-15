@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/raccoontech/taskboard/internal/api"
@@ -12,25 +16,50 @@ import (
 )
 
 func main() {
-	dataFile := envOrDefault("DATA_FILE", "./data/taskboard.json")
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if len(jwtSecret) < 32 {
 		log.Fatal("JWT_SECRET precisa ter pelo menos 32 caracteres")
 	}
 
-	database, err := store.New(dataFile)
+	database, err := store.NewPostgres(os.Getenv("DATABASE_URL"))
 	if err != nil {
-		log.Fatalf("abrir armazenamento: %v", err)
+		log.Fatalf("abrir banco de dados: %v", err)
 	}
+	defer database.Close()
 
 	server := api.NewServer(database, auth.NewTokenService([]byte(jwtSecret), 24*time.Hour), api.Config{
 		CORSOrigin: envOrDefault("CORS_ORIGIN", "http://localhost:3000"),
 	})
 
 	address := envOrDefault("ADDRESS", ":8080")
+	httpServer := &http.Server{
+		Addr:              address,
+		Handler:           server.Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	shutdownSignal, stopSignal := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignal()
+
 	log.Printf("taskboard API ouvindo em %s", address)
-	if err := http.ListenAndServe(address, server.Handler()); err != nil {
-		log.Fatal(err)
+	serverError := make(chan error, 1)
+	go func() {
+		serverError <- httpServer.ListenAndServe()
+	}()
+
+	select {
+	case err := <-serverError:
+		if !errors.Is(err, http.ErrServerClosed) {
+			log.Fatal(err)
+		}
+	case <-shutdownSignal.Done():
+		shutdownContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := httpServer.Shutdown(shutdownContext); err != nil {
+			log.Printf("encerrar API: %v", err)
+		}
 	}
 }
 

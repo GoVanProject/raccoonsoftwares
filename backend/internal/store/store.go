@@ -32,6 +32,7 @@ type Project struct {
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
+	ImageData   string    `json:"image_data,omitempty"`
 	OwnerID     string    `json:"owner_id"`
 	MemberIDs   []string  `json:"member_ids"`
 	CreatedAt   time.Time `json:"created_at"`
@@ -62,6 +63,28 @@ type Store struct {
 	mu   sync.RWMutex
 	path string
 	data data
+}
+
+// Repository is the persistence contract consumed by the HTTP API.
+// Store remains available for fast unit tests; PostgresStore is used by the server.
+type Repository interface {
+	CreateUser(email, passwordHash string) (User, error)
+	UserByEmail(email string) (User, error)
+	UserByID(id string) (User, error)
+	ListUsers(query string) []User
+	ListProjects(userID string) []Project
+	CreateProject(ownerID, name, description, imageData string) (Project, error)
+	ProjectByID(id string) (Project, error)
+	UpdateProject(id, actorID, name, description, imageData string) (Project, error)
+	DeleteProject(id, actorID string) error
+	AddMember(projectID, actorID, userID string) (Project, error)
+	RemoveMember(projectID, actorID, userID string) error
+	TasksByProject(projectID string) []Task
+	TaskCountByProject(projectID string) int
+	CreateTask(projectID, creatorID, title, description, status, priority, assigneeID, dueDate string) (Task, error)
+	TaskByID(id string) (Task, error)
+	UpdateTask(id, actorID, title, description, status, priority, assigneeID, dueDate string) (Task, error)
+	DeleteTask(id, actorID string) error
 }
 
 func New(path string) (*Store, error) {
@@ -142,11 +165,11 @@ func (s *Store) ListUsers(query string) []User {
 	return users
 }
 
-func (s *Store) CreateProject(ownerID, name, description string) (Project, error) {
+func (s *Store) CreateProject(ownerID, name, description, imageData string) (Project, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
-	project := Project{ID: newID(), Name: name, Description: description, OwnerID: ownerID, MemberIDs: []string{ownerID}, CreatedAt: now, UpdatedAt: now}
+	project := Project{ID: newID(), Name: name, Description: description, ImageData: imageData, OwnerID: ownerID, MemberIDs: []string{ownerID}, CreatedAt: now, UpdatedAt: now}
 	s.data.Projects[project.ID] = project
 	return project, s.persistLocked()
 }
@@ -175,7 +198,7 @@ func (s *Store) ListProjects(userID string) []Project {
 	return projects
 }
 
-func (s *Store) UpdateProject(id, actorID, name, description string) (Project, error) {
+func (s *Store) UpdateProject(id, actorID, name, description, imageData string) (Project, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	project, ok := s.data.Projects[id]
@@ -189,6 +212,7 @@ func (s *Store) UpdateProject(id, actorID, name, description string) (Project, e
 		project.Name = name
 	}
 	project.Description = description
+	project.ImageData = imageData
 	project.UpdatedAt = time.Now().UTC()
 	s.data.Projects[id] = project
 	return project, s.persistLocked()
@@ -298,6 +322,18 @@ func (s *Store) TasksByProject(projectID string) []Task {
 		}
 	}
 	return tasks
+}
+
+func (s *Store) TaskCountByProject(projectID string) int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	count := 0
+	for _, task := range s.data.Tasks {
+		if task.ProjectID == projectID {
+			count++
+		}
+	}
+	return count
 }
 
 func (s *Store) TaskByID(id string) (Task, error) {

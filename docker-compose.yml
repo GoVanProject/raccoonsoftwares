@@ -1,14 +1,31 @@
 services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-taskboard}
+      POSTGRES_USER: ${POSTGRES_USER:-taskboard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-taskboard}
+    volumes:
+      - taskboard_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   api:
     build:
       context: ./backend
     environment:
       ADDRESS: ":8080"
-      DATA_FILE: /data/taskboard.json
+      DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-taskboard}:${POSTGRES_PASSWORD:-taskboard}@db:5432/${POSTGRES_DB:-taskboard}?sslmode=disable}
       JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no arquivo .env}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost}
-    volumes:
-      - taskboard_data:/data
     expose:
       - "8080"
     restart: unless-stopped
@@ -18,6 +35,9 @@ services:
       timeout: 3s
       retries: 5
       start_period: 5s
+    depends_on:
+      db:
+        condition: service_healthy
 
   frontend:
     build:
@@ -46,4 +66,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  taskboard_data:
+  taskboard_postgres_data:

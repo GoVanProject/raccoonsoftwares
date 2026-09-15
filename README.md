@@ -43,6 +43,8 @@ docker compose ps
 
 O Nginx publica o frontend e encaminha `/api/*` para a API pela mesma porta. Por padrão, o acesso é `http://SEU_SERVIDOR/`; o healthcheck fica em `http://SEU_SERVIDOR/health`.
 
+O PostgreSQL é iniciado pelo Compose e os dados ficam no volume `taskboard_postgres_data`. A API cria e atualiza as tabelas automaticamente ao iniciar.
+
 Para atualizar uma instalação existente:
 
 ```bash
@@ -50,4 +52,4 @@ git pull
 docker compose up -d --build
 ```
 
-Os dados da API ficam no volume Docker `taskboard_data`. Em produção, coloque HTTPS na frente do Nginx (por exemplo, com um proxy do provedor ou Certbot) e faça backup desse volume.
+Em produção, coloque HTTPS na frente do Nginx (por exemplo, com um proxy do provedor ou Certbot) e faça backup do volume `taskboard_postgres_data`.

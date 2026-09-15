@@ -26,16 +26,38 @@ func TestKanbanFlow(t *testing.T) {
 	ownerToken := owner["token"].(string)
 	memberID := member["user"].(map[string]any)["id"].(string)
 
-	project := call(t, handler, http.MethodPost, "/api/projects", ownerToken, map[string]any{"name": "Projeto MVP"}, http.StatusCreated)
-	projectID := project["project"].(map[string]any)["id"].(string)
-
+	project := call(t, handler, http.MethodPost, "/api/projects", ownerToken, map[string]any{
+		"name":        "Projeto MVP",
+		"description": "## Objetivo\n\nOrganizar o lançamento.",
+		"image_data":  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+	}, http.StatusCreated)
+	projectPayload := project["project"].(map[string]any)
+	projectID := projectPayload["id"].(string)
+	if projectPayload["description"] != "## Objetivo\n\nOrganizar o lançamento." || projectPayload["image_data"] != "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=" {
+		t.Fatalf("descrição ou imagem do projeto não foram persistidas: %#v", projectPayload)
+	}
+	updatedProject := call(t, handler, http.MethodPatch, "/api/projects/"+projectID, ownerToken, map[string]any{
+		"name": "Projeto MVP atualizado", "description": "Descrição revisada", "image_data": "",
+	}, http.StatusOK)
+	if updatedProject["project"].(map[string]any)["name"] != "Projeto MVP atualizado" {
+		t.Fatalf("projeto não foi editado: %#v", updatedProject)
+	}
 	call(t, handler, http.MethodPost, "/api/projects/"+projectID+"/members", ownerToken, map[string]any{"user_id": memberID}, http.StatusOK)
 	task := call(t, handler, http.MethodPost, "/api/projects/"+projectID+"/tasks", ownerToken, map[string]any{
-		"title": "Construir login", "status": "todo", "priority": "high", "assignee_id": memberID,
+		"title": "Construir login", "description": "**Aceite:** login funcionando", "status": "backlog", "priority": "high", "assignee_id": memberID,
 	}, http.StatusCreated)
+	taskPayload := task["task"].(map[string]any)
+	if taskPayload["description"] != "**Aceite:** login funcionando" || taskPayload["status"] != "backlog" {
+		t.Fatalf("descrição ou backlog da tarefa não foram persistidos: %#v", taskPayload)
+	}
 	taskID := task["task"].(map[string]any)["id"].(string)
 
-	call(t, handler, http.MethodPatch, "/api/tasks/"+taskID, member["token"].(string), map[string]any{"status": "in_progress"}, http.StatusOK)
+	updatedTask := call(t, handler, http.MethodPatch, "/api/tasks/"+taskID, member["token"].(string), map[string]any{
+		"title": "Construir login atualizado", "description": "Descrição revisada", "status": "in_progress",
+	}, http.StatusOK)
+	if updatedTask["task"].(map[string]any)["description"] != "Descrição revisada" {
+		t.Fatalf("tarefa não foi editada: %#v", updatedTask)
+	}
 	tasks := call(t, handler, http.MethodGet, "/api/projects/"+projectID+"/tasks", member["token"].(string), nil, http.StatusOK)
 	if len(tasks["tasks"].([]any)) != 1 {
 		t.Fatalf("esperava uma tarefa, recebeu %#v", tasks["tasks"])

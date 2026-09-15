@@ -1,0 +1,430 @@
+package store
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// PostgresStore is the production repository backed by PostgreSQL.
+type PostgresStore struct {
+	pool *pgxpool.Pool
+}
+
+var _ Repository = (*PostgresStore)(nil)
+
+func NewPostgres(databaseURL string) (*PostgresStore, error) {
+	if strings.TrimSpace(databaseURL) == "" {
+		return nil, errors.New("DATABASE_URL não configurada")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("configurar conexão PostgreSQL: %w", err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("conectar ao PostgreSQL: %w", err)
+	}
+
+	store := &PostgresStore{pool: pool}
+	if err := store.migrate(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("migrar banco de dados: %w", err)
+	}
+	return store, nil
+}
+
+func (s *PostgresStore) Close() {
+	s.pool.Close()
+}
+
+func (s *PostgresStore) migrate(ctx context.Context) error {
+	_, err := s.pool.Exec(ctx, `
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_idx ON users (LOWER(email));
+
+CREATE TABLE IF NOT EXISTS projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    image_data TEXT NOT NULL DEFAULT '',
+    owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL
+);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS image_data TEXT NOT NULL DEFAULT '';
+
+CREATE TABLE IF NOT EXISTS project_members (
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (project_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS tasks (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL,
+    priority TEXT NOT NULL,
+    assignee_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    due_date TEXT NOT NULL DEFAULT '',
+    created_by TEXT NOT NULL REFERENCES users(id),
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS tasks_project_id_idx ON tasks (project_id);
+CREATE INDEX IF NOT EXISTS project_members_user_id_idx ON project_members (user_id);
+`)
+	return err
+}
+
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanUser(row rowScanner) (User, error) {
+	var user User
+	if err := row.Scan(&user.ID, &user.Email, &user.PasswordHash, &user.CreatedAt); err != nil {
+		return User{}, translatePostgresError(err)
+	}
+	return user, nil
+}
+
+func scanProject(row rowScanner) (Project, error) {
+	var project Project
+	if err := row.Scan(&project.ID, &project.Name, &project.Description, &project.ImageData, &project.OwnerID, &project.MemberIDs, &project.CreatedAt, &project.UpdatedAt); err != nil {
+		return Project{}, translatePostgresError(err)
+	}
+	return project, nil
+}
+
+func scanTask(row rowScanner) (Task, error) {
+	var task Task
+	if err := row.Scan(&task.ID, &task.ProjectID, &task.Title, &task.Description, &task.Status, &task.Priority, &task.AssigneeID, &task.DueDate, &task.CreatedBy, &task.CreatedAt, &task.UpdatedAt); err != nil {
+		return Task{}, translatePostgresError(err)
+	}
+	return task, nil
+}
+
+func translatePostgresError(err error) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	var postgresError *pgconn.PgError
+	if errors.As(err, &postgresError) && postgresError.Code == "23505" {
+		return ErrConflict
+	}
+	return err
+}
+
+func projectSelectQuery() string {
+	return `
+SELECT p.id, p.name, p.description, p.image_data, p.owner_id,
+       COALESCE(array_agg(pm.user_id ORDER BY pm.user_id) FILTER (WHERE pm.user_id IS NOT NULL), ARRAY[]::TEXT[]),
+       p.created_at, p.updated_at
+FROM projects p
+LEFT JOIN project_members pm ON pm.project_id = p.id`
+}
+
+func (s *PostgresStore) CreateUser(email, passwordHash string) (User, error) {
+	ctx := context.Background()
+	return scanUser(s.pool.QueryRow(ctx, `
+INSERT INTO users (id, email, password_hash, created_at)
+VALUES ($1, $2, $3, $4)
+RETURNING id, email, password_hash, created_at`, newID(), strings.ToLower(strings.TrimSpace(email)), passwordHash, time.Now().UTC()))
+}
+
+func (s *PostgresStore) UserByEmail(email string) (User, error) {
+	return scanUser(s.pool.QueryRow(context.Background(), `
+SELECT id, email, password_hash, created_at
+FROM users
+WHERE LOWER(email) = LOWER($1)`, strings.TrimSpace(email)))
+}
+
+func (s *PostgresStore) UserByID(id string) (User, error) {
+	return scanUser(s.pool.QueryRow(context.Background(), `
+SELECT id, email, password_hash, created_at
+FROM users
+WHERE id = $1`, id))
+}
+
+func (s *PostgresStore) ListUsers(query string) []User {
+	rows, err := s.pool.Query(context.Background(), `
+SELECT id, email, password_hash, created_at
+FROM users
+WHERE $1 = '' OR POSITION(LOWER($1) IN LOWER(email)) > 0
+ORDER BY email`, strings.ToLower(strings.TrimSpace(query)))
+	if err != nil {
+		return []User{}
+	}
+	defer rows.Close()
+	users := make([]User, 0)
+	for rows.Next() {
+		user, scanErr := scanUser(rows)
+		if scanErr == nil {
+			users = append(users, user)
+		}
+	}
+	return users
+}
+
+func (s *PostgresStore) CreateProject(ownerID, name, description, imageData string) (Project, error) {
+	ctx := context.Background()
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Project{}, fmt.Errorf("iniciar criação de projeto: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	now := time.Now().UTC()
+	project := Project{ID: newID(), Name: name, Description: description, ImageData: imageData, OwnerID: ownerID, MemberIDs: []string{ownerID}, CreatedAt: now, UpdatedAt: now}
+	if _, err := tx.Exec(ctx, `
+INSERT INTO projects (id, name, description, image_data, owner_id, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)`, project.ID, project.Name, project.Description, project.ImageData, project.OwnerID, project.CreatedAt, project.UpdatedAt); err != nil {
+		return Project{}, translatePostgresError(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO project_members (project_id, user_id) VALUES ($1, $2)`, project.ID, ownerID); err != nil {
+		return Project{}, translatePostgresError(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Project{}, fmt.Errorf("confirmar criação de projeto: %w", err)
+	}
+	return project, nil
+}
+
+func (s *PostgresStore) ProjectByID(id string) (Project, error) {
+	query := projectSelectQuery() + ` WHERE p.id = $1 GROUP BY p.id, p.name, p.description, p.image_data, p.owner_id, p.created_at, p.updated_at`
+	return scanProject(s.pool.QueryRow(context.Background(), query, id))
+}
+
+func (s *PostgresStore) ListProjects(userID string) []Project {
+	query := projectSelectQuery() + `
+WHERE p.owner_id = $1 OR EXISTS (SELECT 1 FROM project_members visible_member WHERE visible_member.project_id = p.id AND visible_member.user_id = $1)
+GROUP BY p.id, p.name, p.description, p.image_data, p.owner_id, p.created_at, p.updated_at
+ORDER BY p.updated_at DESC`
+	rows, err := s.pool.Query(context.Background(), query, userID)
+	if err != nil {
+		return []Project{}
+	}
+	defer rows.Close()
+	projects := make([]Project, 0)
+	for rows.Next() {
+		project, scanErr := scanProject(rows)
+		if scanErr == nil {
+			projects = append(projects, project)
+		}
+	}
+	return projects
+}
+
+func (s *PostgresStore) UpdateProject(id, actorID, name, description, imageData string) (Project, error) {
+	ownerID, err := s.projectOwner(id)
+	if err != nil {
+		return Project{}, err
+	}
+	if ownerID != actorID {
+		return Project{}, ErrOwnerRequired
+	}
+	_, err = s.pool.Exec(context.Background(), `
+UPDATE projects
+SET name = $2, description = $3, image_data = $4, updated_at = $5
+WHERE id = $1`, id, name, description, imageData, time.Now().UTC())
+	if err != nil {
+		return Project{}, translatePostgresError(err)
+	}
+	return s.ProjectByID(id)
+}
+
+func (s *PostgresStore) DeleteProject(id, actorID string) error {
+	ownerID, err := s.projectOwner(id)
+	if err != nil {
+		return err
+	}
+	if ownerID != actorID {
+		return ErrOwnerRequired
+	}
+	_, err = s.pool.Exec(context.Background(), `DELETE FROM projects WHERE id = $1`, id)
+	return translatePostgresError(err)
+}
+
+func (s *PostgresStore) projectOwner(projectID string) (string, error) {
+	var ownerID string
+	err := s.pool.QueryRow(context.Background(), `SELECT owner_id FROM projects WHERE id = $1`, projectID).Scan(&ownerID)
+	if err != nil {
+		return "", translatePostgresError(err)
+	}
+	return ownerID, nil
+}
+
+func (s *PostgresStore) userExists(userID string) bool {
+	var exists bool
+	return s.pool.QueryRow(context.Background(), `SELECT EXISTS (SELECT 1 FROM users WHERE id = $1)`, userID).Scan(&exists) == nil && exists
+}
+
+func (s *PostgresStore) projectMemberExists(projectID, userID string) bool {
+	var exists bool
+	return s.pool.QueryRow(context.Background(), `SELECT EXISTS (SELECT 1 FROM project_members WHERE project_id = $1 AND user_id = $2)`, projectID, userID).Scan(&exists) == nil && exists
+}
+
+func (s *PostgresStore) AddMember(projectID, actorID, userID string) (Project, error) {
+	ownerID, err := s.projectOwner(projectID)
+	if err != nil {
+		return Project{}, err
+	}
+	if ownerID != actorID {
+		return Project{}, ErrOwnerRequired
+	}
+	if !s.userExists(userID) {
+		return Project{}, ErrNotFound
+	}
+	result, err := s.pool.Exec(context.Background(), `
+INSERT INTO project_members (project_id, user_id)
+VALUES ($1, $2)
+ON CONFLICT DO NOTHING`, projectID, userID)
+	if err != nil {
+		return Project{}, translatePostgresError(err)
+	}
+	if result.RowsAffected() > 0 {
+		if _, err := s.pool.Exec(context.Background(), `UPDATE projects SET updated_at = $2 WHERE id = $1`, projectID, time.Now().UTC()); err != nil {
+			return Project{}, translatePostgresError(err)
+		}
+	}
+	return s.ProjectByID(projectID)
+}
+
+func (s *PostgresStore) RemoveMember(projectID, actorID, userID string) error {
+	ownerID, err := s.projectOwner(projectID)
+	if err != nil {
+		return err
+	}
+	if ownerID != actorID {
+		return ErrOwnerRequired
+	}
+	if userID == ownerID {
+		return ErrInvalid
+	}
+
+	ctx := context.Background()
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("iniciar remoção de integrante: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `DELETE FROM project_members WHERE project_id = $1 AND user_id = $2`, projectID, userID); err != nil {
+		return translatePostgresError(err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE tasks SET assignee_id = NULL, updated_at = $3 WHERE project_id = $1 AND assignee_id = $2`, projectID, userID, time.Now().UTC()); err != nil {
+		return translatePostgresError(err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE projects SET updated_at = $2 WHERE id = $1`, projectID, time.Now().UTC()); err != nil {
+		return translatePostgresError(err)
+	}
+	return tx.Commit(ctx)
+}
+
+func nullableString(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
+}
+
+func taskSelectQuery() string {
+	return `
+SELECT id, project_id, title, description, status, priority,
+       COALESCE(assignee_id, ''), COALESCE(due_date, ''), created_by, created_at, updated_at
+FROM tasks`
+}
+
+func (s *PostgresStore) CreateTask(projectID, creatorID, title, description, status, priority, assigneeID, dueDate string) (Task, error) {
+	if _, err := s.projectOwner(projectID); err != nil {
+		return Task{}, err
+	}
+	if !s.projectMemberExists(projectID, creatorID) {
+		return Task{}, ErrNotMember
+	}
+	if assigneeID != "" && !s.projectMemberExists(projectID, assigneeID) {
+		return Task{}, ErrNotMember
+	}
+	now := time.Now().UTC()
+	query := `
+INSERT INTO tasks (id, project_id, title, description, status, priority, assignee_id, due_date, created_by, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+RETURNING id, project_id, title, description, status, priority, COALESCE(assignee_id, ''), COALESCE(due_date, ''), created_by, created_at, updated_at`
+	return scanTask(s.pool.QueryRow(context.Background(), query, newID(), projectID, title, description, status, priority, nullableString(assigneeID), dueDate, creatorID, now, now))
+}
+
+func (s *PostgresStore) TasksByProject(projectID string) []Task {
+	rows, err := s.pool.Query(context.Background(), taskSelectQuery()+` WHERE project_id = $1 ORDER BY created_at`, projectID)
+	if err != nil {
+		return []Task{}
+	}
+	defer rows.Close()
+	tasks := make([]Task, 0)
+	for rows.Next() {
+		task, scanErr := scanTask(rows)
+		if scanErr == nil {
+			tasks = append(tasks, task)
+		}
+	}
+	return tasks
+}
+
+func (s *PostgresStore) TaskCountByProject(projectID string) int {
+	var count int
+	if err := s.pool.QueryRow(context.Background(), `SELECT COUNT(*) FROM tasks WHERE project_id = $1`, projectID).Scan(&count); err != nil {
+		return 0
+	}
+	return count
+}
+
+func (s *PostgresStore) TaskByID(id string) (Task, error) {
+	return scanTask(s.pool.QueryRow(context.Background(), taskSelectQuery()+` WHERE id = $1`, id))
+}
+
+func (s *PostgresStore) UpdateTask(id, actorID, title, description, status, priority, assigneeID, dueDate string) (Task, error) {
+	var projectID string
+	if err := s.pool.QueryRow(context.Background(), `SELECT project_id FROM tasks WHERE id = $1`, id).Scan(&projectID); err != nil {
+		return Task{}, translatePostgresError(err)
+	}
+	if !s.projectMemberExists(projectID, actorID) {
+		return Task{}, ErrNotMember
+	}
+	if assigneeID != "" && !s.projectMemberExists(projectID, assigneeID) {
+		return Task{}, ErrNotMember
+	}
+	query := `
+UPDATE tasks
+SET title = CASE WHEN $2 <> '' THEN $2 ELSE title END,
+    description = $3, status = $4, priority = $5, assignee_id = $6, due_date = $7, updated_at = $8
+WHERE id = $1
+RETURNING id, project_id, title, description, status, priority, COALESCE(assignee_id, ''), COALESCE(due_date, ''), created_by, created_at, updated_at`
+	return scanTask(s.pool.QueryRow(context.Background(), query, id, title, description, status, priority, nullableString(assigneeID), dueDate, time.Now().UTC()))
+}
+
+func (s *PostgresStore) DeleteTask(id, actorID string) error {
+	var projectID string
+	if err := s.pool.QueryRow(context.Background(), `SELECT project_id FROM tasks WHERE id = $1`, id).Scan(&projectID); err != nil {
+		return translatePostgresError(err)
+	}
+	if !s.projectMemberExists(projectID, actorID) {
+		return ErrNotMember
+	}
+	_, err := s.pool.Exec(context.Background(), `DELETE FROM tasks WHERE id = $1`, id)
+	return translatePostgresError(err)
+}

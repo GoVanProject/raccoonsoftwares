@@ -1,6 +1,8 @@
 package api
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -19,12 +21,12 @@ type Config struct {
 }
 
 type Server struct {
-	store  *store.Store
+	store  store.Repository
 	tokens *auth.TokenService
 	config Config
 }
 
-func NewServer(database *store.Store, tokens *auth.TokenService, config Config) *Server {
+func NewServer(database store.Repository, tokens *auth.TokenService, config Config) *Server {
 	return &Server{store: database, tokens: tokens, config: config}
 }
 
@@ -140,11 +142,13 @@ func (s *Server) listUsers(w http.ResponseWriter, r *http.Request, _ string) {
 type projectRequest struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	ImageData   string `json:"image_data"`
 }
 
 type projectUpdateRequest struct {
 	Name        *string `json:"name"`
 	Description *string `json:"description"`
+	ImageData   *string `json:"image_data"`
 }
 
 func (s *Server) listProjects(w http.ResponseWriter, _ *http.Request, userID string) {
@@ -167,11 +171,16 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request, userID st
 		writeError(w, http.StatusBadRequest, "o nome do projeto é obrigatório e deve ter até 120 caracteres")
 		return
 	}
-	if len(request.Description) > 1000 {
-		writeError(w, http.StatusBadRequest, "a descrição deve ter até 1000 caracteres")
+	if len(request.Description) > maxProjectDescriptionLength {
+		writeError(w, http.StatusBadRequest, "a descrição deve ter até 5000 caracteres")
 		return
 	}
-	project, err := s.store.CreateProject(userID, request.Name, strings.TrimSpace(request.Description))
+	request.ImageData = strings.TrimSpace(request.ImageData)
+	if err := validateImageData(request.ImageData); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	project, err := s.store.CreateProject(userID, request.Name, strings.TrimSpace(request.Description), request.ImageData)
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -210,11 +219,19 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request, userID st
 	if request.Description != nil {
 		description = strings.TrimSpace(*request.Description)
 	}
-	if name == "" || len(name) > 120 || len(description) > 1000 {
+	imageData := project.ImageData
+	if request.ImageData != nil {
+		imageData = strings.TrimSpace(*request.ImageData)
+	}
+	if name == "" || len(name) > 120 || len(description) > maxProjectDescriptionLength {
 		writeError(w, http.StatusBadRequest, "dados do projeto inválidos")
 		return
 	}
-	updated, err := s.store.UpdateProject(project.ID, userID, name, description)
+	if err := validateImageData(imageData); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	updated, err := s.store.UpdateProject(project.ID, userID, name, description, imageData)
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -464,6 +481,7 @@ type projectResponse struct {
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
+	ImageData   string    `json:"image_data,omitempty"`
 	OwnerID     string    `json:"owner_id"`
 	MemberIDs   []string  `json:"member_ids"`
 	TaskCount   int       `json:"task_count"`
@@ -477,8 +495,8 @@ func publicUser(user store.User) publicUserResponse {
 
 func (s *Server) projectView(project store.Project) projectResponse {
 	return projectResponse{
-		ID: project.ID, Name: project.Name, Description: project.Description, OwnerID: project.OwnerID,
-		MemberIDs: project.MemberIDs, TaskCount: len(s.store.TasksByProject(project.ID)), CreatedAt: project.CreatedAt, UpdatedAt: project.UpdatedAt,
+		ID: project.ID, Name: project.Name, Description: project.Description, ImageData: project.ImageData, OwnerID: project.OwnerID,
+		MemberIDs: project.MemberIDs, TaskCount: s.store.TaskCountByProject(project.ID), CreatedAt: project.CreatedAt, UpdatedAt: project.UpdatedAt,
 	}
 }
 
@@ -509,15 +527,21 @@ func validateCredentials(request credentialsRequest) (string, string, error) {
 	return email, request.Password, nil
 }
 
+const (
+	maxProjectDescriptionLength = 5000
+	maxTaskDescriptionLength    = 10000
+	maxProjectImageBytes        = 512 * 1024
+)
+
 func validateTask(title, description, status, priority, dueDate string) error {
 	if title == "" || len(title) > 200 {
 		return errors.New("o título da tarefa é obrigatório e deve ter até 200 caracteres")
 	}
-	if len(description) > 2000 {
-		return errors.New("a descrição deve ter até 2000 caracteres")
+	if len(description) > maxTaskDescriptionLength {
+		return errors.New("a descrição deve ter até 10000 caracteres")
 	}
-	if !oneOf(status, "todo", "in_progress", "done") {
-		return errors.New("status deve ser todo, in_progress ou done")
+	if !oneOf(status, "backlog", "todo", "in_progress", "done") {
+		return errors.New("status deve ser backlog, todo, in_progress ou done")
 	}
 	if !oneOf(priority, "low", "medium", "high") {
 		return errors.New("prioridade deve ser low, medium ou high")
@@ -528,6 +552,45 @@ func validateTask(title, description, status, priority, dueDate string) error {
 		}
 	}
 	return nil
+}
+
+func validateImageData(imageData string) error {
+	if imageData == "" {
+		return nil
+	}
+	separator := strings.IndexByte(imageData, ',')
+	if separator <= 0 || separator == len(imageData)-1 {
+		return errors.New("a imagem deve ser um arquivo PNG, JPEG ou WebP válido")
+	}
+	metadata := strings.Split(imageData[:separator], ";")
+	if len(metadata) != 2 || !oneOf(metadata[0], "data:image/png", "data:image/jpeg", "data:image/webp") || metadata[1] != "base64" {
+		return errors.New("a imagem deve ser um arquivo PNG, JPEG ou WebP válido")
+	}
+	decoded, err := base64.StdEncoding.DecodeString(imageData[separator+1:])
+	if err != nil || len(decoded) == 0 {
+		return errors.New("a imagem deve ser um arquivo PNG, JPEG ou WebP válido")
+	}
+	if len(decoded) > maxProjectImageBytes {
+		return errors.New("a imagem deve ter até 512 KB")
+	}
+	mimeType := strings.TrimPrefix(metadata[0], "data:")
+	if !imageBytesMatchMime(mimeType, decoded) {
+		return errors.New("a imagem deve ser um arquivo PNG, JPEG ou WebP válido")
+	}
+	return nil
+}
+
+func imageBytesMatchMime(mimeType string, content []byte) bool {
+	switch mimeType {
+	case "image/png":
+		return bytes.HasPrefix(content, []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a})
+	case "image/jpeg":
+		return len(content) >= 3 && content[0] == 0xff && content[1] == 0xd8 && content[2] == 0xff
+	case "image/webp":
+		return len(content) >= 12 && bytes.Equal(content[:4], []byte("RIFF")) && bytes.Equal(content[8:12], []byte("WEBP"))
+	default:
+		return false
+	}
 }
 
 func oneOf(value string, values ...string) bool {
