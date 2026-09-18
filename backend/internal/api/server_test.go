@@ -23,8 +23,10 @@ func TestKanbanFlow(t *testing.T) {
 
 	owner := call(t, handler, http.MethodPost, "/api/auth/register", "", map[string]any{"email": "owner@example.com", "password": "senha-owner"}, http.StatusCreated)
 	member := call(t, handler, http.MethodPost, "/api/auth/register", "", map[string]any{"email": "member@example.com", "password": "senha-member"}, http.StatusCreated)
+	outsider := call(t, handler, http.MethodPost, "/api/auth/register", "", map[string]any{"email": "outsider@example.com", "password": "senha-outsider"}, http.StatusCreated)
 	ownerToken := owner["token"].(string)
 	memberID := member["user"].(map[string]any)["id"].(string)
+	outsiderToken := outsider["token"].(string)
 
 	project := call(t, handler, http.MethodPost, "/api/projects", ownerToken, map[string]any{
 		"name":        "Projeto MVP",
@@ -33,6 +35,8 @@ func TestKanbanFlow(t *testing.T) {
 	}, http.StatusCreated)
 	projectPayload := project["project"].(map[string]any)
 	projectID := projectPayload["id"].(string)
+	call(t, handler, http.MethodPost, "/api/projects/"+projectID+"/room/ticket", outsiderToken, nil, http.StatusForbidden)
+	call(t, handler, http.MethodGet, "/api/projects/"+projectID+"/room/ws", "", nil, http.StatusUnauthorized)
 	if projectPayload["description"] != "## Objetivo\n\nOrganizar o lançamento." || projectPayload["image_data"] != "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=" {
 		t.Fatalf("descrição ou imagem do projeto não foram persistidas: %#v", projectPayload)
 	}
@@ -43,6 +47,25 @@ func TestKanbanFlow(t *testing.T) {
 		t.Fatalf("projeto não foi editado: %#v", updatedProject)
 	}
 	call(t, handler, http.MethodPost, "/api/projects/"+projectID+"/members", ownerToken, map[string]any{"user_id": memberID}, http.StatusOK)
+	members := call(t, handler, http.MethodGet, "/api/projects/"+projectID+"/members", ownerToken, nil, http.StatusOK)
+	if len(members["members"].([]any)) != 2 {
+		t.Fatalf("esperava dois integrantes, recebeu %#v", members["members"])
+	}
+	updatedMembers := call(t, handler, http.MethodPatch, "/api/projects/"+projectID+"/members/"+memberID, ownerToken, map[string]any{"role": "viewer"}, http.StatusOK)
+	memberPayload := updatedMembers["members"].([]any)
+	for _, item := range memberPayload {
+		memberView := item.(map[string]any)
+		if memberView["id"] == memberID && memberView["role"] != "viewer" {
+			t.Fatalf("permissão do membro não foi atualizada: %#v", memberView)
+		}
+	}
+	roomTicket := call(t, handler, http.MethodPost, "/api/projects/"+projectID+"/room/ticket", member["token"].(string), nil, http.StatusOK)
+	if roomTicket["ticket"] == "" {
+		t.Fatal("a sala deveria emitir um ticket temporário")
+	}
+	call(t, handler, http.MethodPost, "/api/projects/"+projectID+"/tasks", member["token"].(string), map[string]any{
+		"title": "Tarefa somente leitura", "status": "backlog", "priority": "low",
+	}, http.StatusForbidden)
 	task := call(t, handler, http.MethodPost, "/api/projects/"+projectID+"/tasks", ownerToken, map[string]any{
 		"title": "Construir login", "description": "**Aceite:** login funcionando", "status": "backlog", "priority": "high", "assignee_id": memberID,
 	}, http.StatusCreated)
@@ -51,6 +74,7 @@ func TestKanbanFlow(t *testing.T) {
 		t.Fatalf("descrição ou backlog da tarefa não foram persistidos: %#v", taskPayload)
 	}
 	taskID := task["task"].(map[string]any)["id"].(string)
+	call(t, handler, http.MethodPatch, "/api/projects/"+projectID+"/members/"+memberID, ownerToken, map[string]any{"role": "editor"}, http.StatusOK)
 
 	updatedTask := call(t, handler, http.MethodPatch, "/api/tasks/"+taskID, member["token"].(string), map[string]any{
 		"title": "Construir login atualizado", "description": "Descrição revisada", "status": "in_progress",

@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -29,6 +31,8 @@ func main() {
 
 	server := api.NewServer(database, auth.NewTokenService([]byte(jwtSecret), 24*time.Hour), api.Config{
 		CORSOrigin: envOrDefault("CORS_ORIGIN", "http://localhost:3000"),
+		STUNURLs:   splitEnv("STUN_URLS"),
+		TURN:       turnConfigFromEnv(),
 	})
 
 	address := envOrDefault("ADDRESS", ":8080")
@@ -68,4 +72,34 @@ func envOrDefault(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func splitEnv(key string) []string {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+func turnConfigFromEnv() *api.TURNConfig {
+	host := strings.TrimSpace(os.Getenv("TURN_HOST"))
+	secret := strings.TrimSpace(os.Getenv("TURN_SECRET"))
+	if host == "" || secret == "" {
+		return nil
+	}
+	port := 3478
+	if configured := strings.TrimSpace(os.Getenv("TURN_PORT")); configured != "" {
+		if parsed, err := strconv.Atoi(configured); err == nil && parsed > 0 && parsed < 65536 {
+			port = parsed
+		}
+	}
+	return &api.TURNConfig{Host: host, Port: port, Secret: secret}
 }

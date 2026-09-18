@@ -18,6 +18,21 @@ services:
       retries: 10
     restart: unless-stopped
 
+  turn:
+    image: coturn/coturn:4.6
+    command: >-
+      -n --log-file=stdout --fingerprint
+      --use-auth-secret --static-auth-secret=${TURN_SECRET:?defina TURN_SECRET no arquivo .env}
+      --realm=${TURN_REALM:-raccoonsoftwares}
+      --listening-port=3478
+      --min-port=${TURN_MIN_PORT:-49152}
+      --max-port=${TURN_MAX_PORT:-49252}
+    ports:
+      - "${TURN_PORT:-3478}:3478/tcp"
+      - "${TURN_PORT:-3478}:3478/udp"
+      - "${TURN_MIN_PORT:-49152}-${TURN_MAX_PORT:-49252}:${TURN_MIN_PORT:-49152}-${TURN_MAX_PORT:-49252}/udp"
+    restart: unless-stopped
+
   api:
     build:
       context: ./backend
@@ -26,6 +41,10 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-taskboard}:${POSTGRES_PASSWORD:-taskboard}@db:5432/${POSTGRES_DB:-taskboard}?sslmode=disable}
       JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no arquivo .env}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost}
+      STUN_URLS: ${STUN_URLS:-}
+      TURN_HOST: ${TURN_HOST:-}
+      TURN_PORT: ${TURN_PORT:-3478}
+      TURN_SECRET: ${TURN_SECRET:?defina TURN_SECRET no arquivo .env}
     expose:
       - "8080"
     restart: unless-stopped
@@ -38,6 +57,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      turn:
+        condition: service_started
 
   frontend:
     build:

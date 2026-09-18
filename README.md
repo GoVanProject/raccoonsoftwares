@@ -1,4 +1,4 @@
-# RaccoonTech Taskboard
+# RaccoonSoftwares Taskboard
 
 Landing page em Next.js e backend em Go para organizar projetos, tarefas Kanban e integrantes de equipe.
 
@@ -34,7 +34,7 @@ cd raccoonsoftwares
 cp deploy/.env.server.example .env
 ```
 
-Edite `.env` e troque `JWT_SECRET` por um segredo aleatório. Em seguida:
+Edite `.env` e troque `JWT_SECRET` e `TURN_SECRET` por segredos aleatórios. Configure `TURN_HOST` com o domínio ou IP público do servidor. Em seguida:
 
 ```bash
 docker compose up -d --build
@@ -42,6 +42,8 @@ docker compose ps
 ```
 
 O Nginx publica o frontend e encaminha `/api/*` para a API pela mesma porta. Por padrão, o acesso é `http://SEU_SERVIDOR/`; o healthcheck fica em `http://SEU_SERVIDOR/health`.
+
+O serviço coturn usa a porta `3478` TCP/UDP e o intervalo UDP definido por `TURN_MIN_PORT` e `TURN_MAX_PORT` (por padrão, `49152` a `49252`). Libere essas portas no firewall. Se o servidor estiver atrás de NAT, configure também o endereço externo do coturn na infraestrutura. A sala de compartilhamento de tela exige HTTPS em produção para que o navegador permita captura de tela e microfone.
 
 O PostgreSQL é iniciado pelo Compose e os dados ficam no volume `taskboard_postgres_data`. A API cria e atualiza as tabelas automaticamente ao iniciar.
 
