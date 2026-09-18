@@ -77,13 +77,39 @@ type credentialsRequest struct {
 	Password string `json:"password"`
 }
 
+type registerRequest struct {
+	Alias                string `json:"alias"`
+	Email                string `json:"email"`
+	Password             string `json:"password"`
+	PasswordConfirmation string `json:"password_confirmation"`
+	AvatarData           string `json:"avatar_data"`
+}
+
 func (s *Server) register(w http.ResponseWriter, r *http.Request) {
-	var request credentialsRequest
+	var request registerRequest
 	if !readJSON(w, r, &request) {
 		return
 	}
-	email, password, err := validateCredentials(request)
+	email, password, err := validateCredentials(credentialsRequest{Email: request.Email, Password: request.Password})
 	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	alias := strings.TrimSpace(request.Alias)
+	if alias == "" {
+		// Keep older API clients working while the new UI requires an alias.
+		alias = strings.Split(email, "@")[0]
+	}
+	if len(alias) > 60 {
+		writeError(w, http.StatusBadRequest, "o nome deve ter até 60 caracteres")
+		return
+	}
+	if request.PasswordConfirmation != "" && request.PasswordConfirmation != password {
+		writeError(w, http.StatusBadRequest, "as senhas não conferem")
+		return
+	}
+	avatarData := strings.TrimSpace(request.AvatarData)
+	if err := validateAvatarData(avatarData); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -92,7 +118,7 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "não foi possível proteger a senha")
 		return
 	}
-	user, err := s.store.CreateUser(email, passwordHash)
+	user, err := s.store.CreateUser(email, passwordHash, alias, avatarData)
 	if err != nil {
 		if errors.Is(err, store.ErrConflict) {
 			writeError(w, http.StatusConflict, "este email já está cadastrado")
@@ -287,7 +313,7 @@ func (s *Server) listMembers(w http.ResponseWriter, r *http.Request, userID stri
 	for _, member := range members {
 		response = append(response, projectMember(member))
 	}
-	sort.Slice(response, func(i, j int) bool { return response[i].Email < response[j].Email })
+	sort.Slice(response, func(i, j int) bool { return response[i].Alias < response[j].Alias })
 	writeJSON(w, http.StatusOK, map[string]any{"members": response})
 }
 
@@ -508,16 +534,20 @@ func (s *Server) cors(next http.Handler) http.Handler {
 }
 
 type publicUserResponse struct {
-	ID        string    `json:"id"`
-	Email     string    `json:"email"`
-	CreatedAt time.Time `json:"created_at"`
+	ID         string    `json:"id"`
+	Alias      string    `json:"alias"`
+	Email      string    `json:"email"`
+	AvatarData string    `json:"avatar_data,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 type projectMemberResponse struct {
-	ID        string    `json:"id"`
-	Email     string    `json:"email"`
-	Role      string    `json:"role"`
-	CreatedAt time.Time `json:"created_at"`
+	ID         string    `json:"id"`
+	Alias      string    `json:"alias"`
+	Email      string    `json:"email"`
+	AvatarData string    `json:"avatar_data,omitempty"`
+	Role       string    `json:"role"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 type projectResponse struct {
@@ -533,11 +563,18 @@ type projectResponse struct {
 }
 
 func publicUser(user store.User) publicUserResponse {
-	return publicUserResponse{ID: user.ID, Email: user.Email, CreatedAt: user.CreatedAt}
+	return publicUserResponse{ID: user.ID, Alias: userAlias(user), Email: user.Email, AvatarData: user.AvatarData, CreatedAt: user.CreatedAt}
 }
 
 func projectMember(member store.ProjectMember) projectMemberResponse {
-	return projectMemberResponse{ID: member.User.ID, Email: member.User.Email, Role: member.Role, CreatedAt: member.User.CreatedAt}
+	return projectMemberResponse{ID: member.User.ID, Alias: userAlias(member.User), Email: member.User.Email, AvatarData: member.User.AvatarData, Role: member.Role, CreatedAt: member.User.CreatedAt}
+}
+
+func userAlias(user store.User) string {
+	if user.Alias != "" {
+		return user.Alias
+	}
+	return strings.Split(user.Email, "@")[0]
 }
 
 func (s *Server) projectView(project store.Project) projectResponse {
@@ -578,6 +615,7 @@ const (
 	maxProjectDescriptionLength = 5000
 	maxTaskDescriptionLength    = 10000
 	maxProjectImageBytes        = 512 * 1024
+	maxAvatarImageBytes         = 512 * 1024
 )
 
 func validateTask(title, description, status, priority, dueDate string) error {
@@ -625,6 +663,45 @@ func validateImageData(imageData string) error {
 		return errors.New("a imagem deve ser um arquivo PNG, JPEG ou WebP válido")
 	}
 	return nil
+}
+
+func validateAvatarData(imageData string) error {
+	if imageData == "" {
+		return nil
+	}
+	separator := strings.IndexByte(imageData, ',')
+	if separator <= 0 || separator == len(imageData)-1 {
+		return errors.New("a foto deve ser um arquivo GIF, PNG ou JPG válido")
+	}
+	metadata := strings.Split(imageData[:separator], ";")
+	if len(metadata) != 2 || !oneOf(metadata[0], "data:image/gif", "data:image/png", "data:image/jpeg", "data:image/jpg") || metadata[1] != "base64" {
+		return errors.New("a foto deve ser um arquivo GIF, PNG ou JPG válido")
+	}
+	decoded, err := base64.StdEncoding.DecodeString(imageData[separator+1:])
+	if err != nil || len(decoded) == 0 {
+		return errors.New("a foto deve ser um arquivo GIF, PNG ou JPG válido")
+	}
+	if len(decoded) > maxAvatarImageBytes {
+		return errors.New("a foto deve ter até 512 KB")
+	}
+	mimeType := strings.TrimPrefix(metadata[0], "data:")
+	if !avatarBytesMatchMime(mimeType, decoded) {
+		return errors.New("a foto deve ser um arquivo GIF, PNG ou JPG válido")
+	}
+	return nil
+}
+
+func avatarBytesMatchMime(mimeType string, content []byte) bool {
+	switch mimeType {
+	case "image/png":
+		return bytes.HasPrefix(content, []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a})
+	case "image/jpeg", "image/jpg":
+		return len(content) >= 3 && content[0] == 0xff && content[1] == 0xd8 && content[2] == 0xff
+	case "image/gif":
+		return bytes.HasPrefix(content, []byte("GIF87a")) || bytes.HasPrefix(content, []byte("GIF89a"))
+	default:
+		return false
+	}
 }
 
 func imageBytesMatchMime(mimeType string, content []byte) bool {

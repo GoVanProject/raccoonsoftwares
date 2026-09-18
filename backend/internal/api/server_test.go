@@ -91,6 +91,33 @@ func TestKanbanFlow(t *testing.T) {
 	call(t, handler, http.MethodDelete, "/api/projects/"+projectID, member["token"].(string), nil, http.StatusForbidden)
 }
 
+func TestRegisterProfile(t *testing.T) {
+	database, err := store.New(t.TempDir() + "/taskboard.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(database, auth.NewTokenService([]byte(strings.Repeat("s", 32)), time.Hour), Config{CORSOrigin: "http://localhost:3000"})
+	handler := server.Handler()
+	avatar := "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+	registered := call(t, handler, http.MethodPost, "/api/auth/register", "", map[string]any{
+		"alias":                 "Nina",
+		"email":                 "nina@example.com",
+		"password":              "senha-segura",
+		"password_confirmation": "senha-segura",
+		"avatar_data":           avatar,
+	}, http.StatusCreated)
+	user := registered["user"].(map[string]any)
+	if user["alias"] != "Nina" || user["email"] != "nina@example.com" || user["avatar_data"] != avatar {
+		t.Fatalf("perfil não foi persistido na resposta: %#v", user)
+	}
+	call(t, handler, http.MethodPost, "/api/auth/register", "", map[string]any{
+		"alias":                 "Nina",
+		"email":                 "outra@example.com",
+		"password":              "senha-segura",
+		"password_confirmation": "senha-diferente",
+	}, http.StatusBadRequest)
+}
+
 func call(t *testing.T, handler http.Handler, method, path, token string, body any, expectedStatus int) map[string]any {
 	t.Helper()
 	var payload []byte

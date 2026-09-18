@@ -23,7 +23,9 @@ export type WorkspaceIconName =
 
 type AvatarMember = {
   id: string;
+  alias?: string;
   email: string;
+  avatar_data?: string;
   publishing?: boolean;
 };
 
@@ -38,12 +40,12 @@ type WorkspaceRailProps = {
   onLogout: () => void;
 };
 
-function displayName(email: string) {
-  return email.split("@")[0] || email;
+function displayName(email: string, alias?: string) {
+  return alias?.trim() || email.split("@")[0] || email;
 }
 
-export function initials(email: string) {
-  return displayName(email).slice(0, 2).toUpperCase();
+export function initials(email: string, alias?: string) {
+  return displayName(email, alias).slice(0, 2).toUpperCase();
 }
 
 export function WorkspaceIcon({ name }: { name: WorkspaceIconName }) {
@@ -92,7 +94,7 @@ export function WorkspaceAvatarStack({
           title={member.id === currentId ? "Você" : member.email}
           aria-label={member.id === currentId ? "Você" : member.email}
         >
-          {initials(member.email)}
+          {member.avatar_data ? <img className="workspace-avatar-image" src={member.avatar_data} alt="" /> : initials(member.email, member.alias)}
         </span>
       ))}
       {remaining > 0 ? <span className="workspace-avatar-more">+{remaining}</span> : null}

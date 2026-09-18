@@ -30,7 +30,9 @@ const (
 
 type User struct {
 	ID           string    `json:"id"`
+	Alias        string    `json:"alias"`
 	Email        string    `json:"email"`
+	AvatarData   string    `json:"avatar_data,omitempty"`
 	PasswordHash string    `json:"password_hash"`
 	CreatedAt    time.Time `json:"created_at"`
 }
@@ -81,7 +83,7 @@ type Store struct {
 // Repository is the persistence contract consumed by the HTTP API.
 // Store remains available for fast unit tests; PostgresStore is used by the server.
 type Repository interface {
-	CreateUser(email, passwordHash string) (User, error)
+	CreateUser(email, passwordHash string, profile ...string) (User, error)
 	UserByEmail(email string) (User, error)
 	UserByID(id string) (User, error)
 	ListUsers(query string) []User
@@ -133,7 +135,7 @@ func New(path string) (*Store, error) {
 	return s, nil
 }
 
-func (s *Store) CreateUser(email, passwordHash string) (User, error) {
+func (s *Store) CreateUser(email, passwordHash string, profile ...string) (User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, existing := range s.data.Users {
@@ -141,7 +143,19 @@ func (s *Store) CreateUser(email, passwordHash string) (User, error) {
 			return User{}, ErrConflict
 		}
 	}
-	user := User{ID: newID(), Email: strings.ToLower(strings.TrimSpace(email)), PasswordHash: passwordHash, CreatedAt: time.Now().UTC()}
+	normalizedEmail := strings.ToLower(strings.TrimSpace(email))
+	alias := ""
+	avatarData := ""
+	if len(profile) > 0 {
+		alias = strings.TrimSpace(profile[0])
+	}
+	if len(profile) > 1 {
+		avatarData = strings.TrimSpace(profile[1])
+	}
+	if alias == "" {
+		alias = strings.Split(normalizedEmail, "@")[0]
+	}
+	user := User{ID: newID(), Alias: alias, Email: normalizedEmail, AvatarData: avatarData, PasswordHash: passwordHash, CreatedAt: time.Now().UTC()}
 	s.data.Users[user.ID] = user
 	return user, s.persistLocked()
 }

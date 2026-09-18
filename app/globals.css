@@ -197,6 +197,7 @@ footer { display: flex; align-items: center; justify-content: space-between; gap
 
 .auth-page { display: grid; min-height: 100vh; place-items: center; padding: 24px; background: radial-gradient(circle at 20% 20%, rgba(171, 205, 255, .55), transparent 30%), radial-gradient(circle at 86% 22%, rgba(255, 192, 154, .55), transparent 27%), linear-gradient(145deg, var(--page), var(--page-2)); }
 .auth-card { width: min(100%, 430px); padding: 38px; border: 1px solid rgba(255, 255, 255, .55); border-radius: 24px; background: var(--surface); box-shadow: var(--soft-shadow); backdrop-filter: blur(22px); }
+.register-card { width: min(100%, 520px); }
 .auth-brand { display: inline-flex; align-items: center; gap: 9px; margin-bottom: 52px; font-size: 15px; font-weight: 800; letter-spacing: -.03em; }
 .auth-brand:first-letter { font-size: 25px; }
 .auth-kicker, .workspace-kicker { margin-bottom: 12px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
@@ -207,6 +208,19 @@ footer { display: flex; align-items: center; justify-content: space-between; gap
 .auth-form input, .workspace-page input, .workspace-page select { min-height: 43px; border: 1px solid var(--line); border-radius: 10px; outline: 0; background: var(--surface-2); color: var(--text); font-size: 13px; }
 .auth-form input { padding: 0 13px; }
 .auth-form input:focus, .workspace-page input:focus, .workspace-page select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 14%, transparent); }
+.avatar-picker { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+.avatar-picker-copy { display: grid; gap: 4px; color: var(--text); font-size: 12px; font-weight: 750; }
+.avatar-picker-copy small { color: var(--muted); font-size: 10px; font-weight: 500; }
+.avatar-picker-copy > span small { margin-left: 5px; color: var(--muted-2); }
+.avatar-upload { position: relative; display: flex !important; min-height: 43px; align-items: center; justify-content: space-between; gap: 12px; padding: 0 13px; border: 1px dashed var(--line-strong); border-radius: 10px; background: var(--surface-solid); color: var(--text) !important; cursor: pointer; }
+.avatar-upload:hover { border-color: var(--blue); }
+.avatar-upload span { font-size: 12px; font-weight: 700; }
+.avatar-upload small { color: var(--muted); font-size: 10px; font-weight: 500; }
+.avatar-upload input { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; opacity: 0; pointer-events: none; }
+.avatar-preview { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.avatar-preview img { width: 48px; height: 48px; flex: 0 0 48px; object-fit: cover; border: 1px solid var(--line); border-radius: 50%; background: var(--surface-solid); }
+.avatar-preview span { min-width: 0; overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.avatar-preview button { margin-left: auto; padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-solid); color: var(--text); font-size: 10px; cursor: pointer; }
 .form-error { margin: -2px 0 0; color: #cc3945; font-size: 12px; line-height: 1.4; }
 .auth-submit { min-height: 45px; margin-top: 4px; border: 0; border-radius: 10px; background: var(--button); color: var(--button-text); font-size: 13px; font-weight: 750; cursor: pointer; }
 .auth-submit:disabled { cursor: wait; opacity: .65; }
@@ -279,7 +293,7 @@ footer { display: flex; align-items: center; justify-content: space-between; gap
 .room-tile, .room-empty { position: relative; min-height: 300px; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 14px; background: #11151a; box-shadow: var(--card-shadow); }
 .room-video { display: block; width: 100%; height: 100%; min-height: 300px; object-fit: contain; background: #11151a; }
 .room-tile-label { position: absolute; z-index: 1; top: 12px; right: 12px; left: 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; border: 1px solid rgba(255, 255, 255, .14); border-radius: 8px; background: rgba(17, 21, 26, .82); color: #fff; font-size: 11px; font-weight: 750; }
-.room-tile-meta { display: flex; min-width: 0; align-items: center; gap: 7px; }.room-tile-meta > span:last-child { display: grid; gap: 2px; min-width: 0; }.room-tile-meta strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.room-tile-meta small { color: rgba(255, 255, 255, .65); font-size: 9px; font-weight: 600; }.room-tile-avatar { display: grid; width: 24px; height: 24px; flex: 0 0 24px; place-items: center; border-radius: 50%; background: #5c8b7a; color: #fff; font-size: 8px; font-weight: 800; }
+.room-tile-meta { display: flex; min-width: 0; align-items: center; gap: 7px; }.room-tile-meta > span:last-child { display: grid; gap: 2px; min-width: 0; }.room-tile-meta strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.room-tile-meta small { color: rgba(255, 255, 255, .65); font-size: 9px; font-weight: 600; }.room-tile-avatar { display: grid; width: 24px; height: 24px; flex: 0 0 24px; place-items: center; border-radius: 50%; background: #5c8b7a; color: #fff; font-size: 8px; font-weight: 800; }.room-tile-avatar-image { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 .room-tile-label small { color: rgba(255, 255, 255, .65); font-size: 9px; font-weight: 600; }
 .room-tile-action { display: grid; width: 28px; height: 28px; flex: 0 0 28px; place-items: center; border: 1px solid rgba(255, 255, 255, .18); border-radius: 7px; background: rgba(255, 255, 255, .08); color: #fff; cursor: pointer; }.room-tile-action:hover, .room-tile-action:focus-visible { background: rgba(255, 255, 255, .18); }.room-icon { display: block; width: 18px; height: 18px; }
 .room-tile:fullscreen { border: 0; border-radius: 0; background: #000; }.room-tile:fullscreen .room-video { width: 100vw; height: 100vh; min-height: 100vh; }.room-tile:fullscreen .room-tile-label { top: 18px; right: 18px; left: 18px; }
@@ -868,6 +882,7 @@ body:has(.workspace-page)::after {
   font-weight: 800;
   box-shadow: 0 3px 8px rgba(0, 0, 0, .14);
 }
+.workspace-avatar-image { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 
 .workspace-avatar:first-child {
   margin-left: 0;
@@ -1213,6 +1228,7 @@ body:has(.workspace-page)::after {
   font-size: 9px;
   font-weight: 800;
 }
+.workspace-member-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 
 .workspace-member-identity {
   display: grid;

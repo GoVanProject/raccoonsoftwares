@@ -38,7 +38,9 @@ type roomIceServer struct {
 
 type roomPeer struct {
 	ID         string `json:"id"`
+	Alias      string `json:"alias"`
 	Email      string `json:"email"`
+	AvatarData string `json:"avatar_data,omitempty"`
 	Publishing bool   `json:"publishing"`
 	MicEnabled bool   `json:"mic_enabled"`
 }
@@ -65,7 +67,9 @@ type roomClientMessage struct {
 type roomParticipant struct {
 	id         string
 	userID     string
+	alias      string
 	email      string
+	avatarData string
 	send       chan []byte
 	publishing bool
 	micEnabled bool
@@ -207,7 +211,7 @@ func (m *roomManager) broadcast(projectID, exceptID string, message roomMessage)
 }
 
 func toRoomPeer(participant *roomParticipant) roomPeer {
-	return roomPeer{ID: participant.id, Email: participant.email, Publishing: participant.publishing, MicEnabled: participant.micEnabled}
+	return roomPeer{ID: participant.id, Alias: participant.alias, Email: participant.email, AvatarData: participant.avatarData, Publishing: participant.publishing, MicEnabled: participant.micEnabled}
 }
 
 func pointerToRoomPeer(peer roomPeer) *roomPeer {
@@ -284,12 +288,20 @@ func roomTicketFromRequest(r *http.Request) string {
 	return ""
 }
 
-func newRoomParticipant(userID, email string) (*roomParticipant, error) {
+func newRoomParticipant(userID, email string, profile ...string) (*roomParticipant, error) {
 	bytes := make([]byte, 12)
 	if _, err := rand.Read(bytes); err != nil {
 		return nil, err
 	}
-	return &roomParticipant{id: hex.EncodeToString(bytes), userID: userID, email: email, send: make(chan []byte, 128)}, nil
+	alias := strings.Split(email, "@")[0]
+	avatarData := ""
+	if len(profile) > 0 && profile[0] != "" {
+		alias = profile[0]
+	}
+	if len(profile) > 1 {
+		avatarData = profile[1]
+	}
+	return &roomParticipant{id: hex.EncodeToString(bytes), userID: userID, alias: alias, email: email, avatarData: avatarData, send: make(chan []byte, 128)}, nil
 }
 
 func (s *Server) roomWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -328,7 +340,7 @@ func (s *Server) roomWebSocket(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	participant, err := newRoomParticipant(user.ID, user.Email)
+	participant, err := newRoomParticipant(user.ID, user.Email, userAlias(user), user.AvatarData)
 	if err != nil {
 		_ = connection.Close()
 		return

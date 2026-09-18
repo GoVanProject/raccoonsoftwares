@@ -29,12 +29,12 @@ Variáveis disponíveis:
 
 ## Autenticação
 
-O cadastro não exige confirmação de email nem repetição de senha. Envie somente email e senha:
+O cadastro aceita nome ou alias, email, senha, confirmação de senha e uma foto opcional em GIF, PNG ou JPG:
 
 ```bash
 curl -X POST http://localhost:8080/api/auth/register \
   -H 'Content-Type: application/json' \
-  -d '{"email":"voce@exemplo.com","password":"senha-segura"}'
+  -d '{"alias":"Nina","email":"voce@exemplo.com","password":"senha-segura","password_confirmation":"senha-segura","avatar_data":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="}'
 ```
 
 O cadastro e o login retornam um JWT no campo `token`. Use-o nas próximas chamadas:

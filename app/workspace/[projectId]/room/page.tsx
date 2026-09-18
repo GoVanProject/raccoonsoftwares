@@ -8,7 +8,7 @@ import { API_URL, taskboardFetch } from "../../../lib/taskboard";
 import { WorkspaceAvatarStack, WorkspaceRail } from "../../components/workspace-ui";
 
 type Project = { id: string; name: string; description: string };
-type RoomPeer = { id: string; email: string; publishing: boolean; mic_enabled: boolean };
+type RoomPeer = { id: string; alias?: string; email: string; avatar_data?: string; publishing: boolean; mic_enabled: boolean };
 type RoomTicket = { ticket: string; expires_at: string; ice_servers: RTCIceServer[] };
 type SignalDescription = { type: RTCSdpType; sdp?: string };
 type SignalPayload =
@@ -49,12 +49,12 @@ function socketURL(path: string) {
   return url.toString();
 }
 
-function displayName(email: string) {
-  return email.split("@")[0] || email;
+function displayName(email: string, alias?: string) {
+  return alias?.trim() || email.split("@")[0] || email;
 }
 
-function initials(email: string) {
-  return displayName(email).slice(0, 2).toUpperCase();
+function initials(email: string, alias?: string) {
+  return displayName(email, alias).slice(0, 2).toUpperCase();
 }
 
 function RoomVideo({ stream, label, muted = false }: { stream: MediaStream; label: string; muted?: boolean }) {
@@ -535,12 +535,12 @@ export default function RoomPage() {
 
         <div className="room-grid" aria-live="polite">
           {isSharing && localScreen ? <article className="room-tile room-tile-local" ref={(element) => { tileRefs.current.local = element; }}>
-            <div className="room-tile-label"><div className="room-tile-meta"><span className="room-tile-avatar">{selfPeer ? initials(selfPeer.email) : "EU"}</span><span><strong>Você</strong><small>Transmitindo</small></span></div><button className="room-tile-action" type="button" onClick={() => void toggleTileFullscreen("local")} aria-label={fullscreenTile === "local" ? "Sair da tela cheia" : "Abrir tela compartilhada em tela cheia"} title={fullscreenTile === "local" ? "Sair da tela cheia" : "Tela cheia"}><RoomIcon name={fullscreenTile === "local" ? "exitFullscreen" : "fullscreen"} /></button></div>
+            <div className="room-tile-label"><div className="room-tile-meta"><span className="room-tile-avatar">{selfPeer?.avatar_data ? <img className="room-tile-avatar-image" src={selfPeer.avatar_data} alt="" /> : selfPeer ? initials(selfPeer.email, selfPeer.alias) : "EU"}</span><span><strong>Você</strong><small>Transmitindo</small></span></div><button className="room-tile-action" type="button" onClick={() => void toggleTileFullscreen("local")} aria-label={fullscreenTile === "local" ? "Sair da tela cheia" : "Abrir tela compartilhada em tela cheia"} title={fullscreenTile === "local" ? "Sair da tela cheia" : "Tela cheia"}><RoomIcon name={fullscreenTile === "local" ? "exitFullscreen" : "fullscreen"} /></button></div>
             <RoomVideo stream={localScreen} label="você" muted />
           </article> : null}
           {remoteTiles.map((peer) => <article className="room-tile" key={peer.id} ref={(element) => { tileRefs.current[peer.id] = element; }}>
-            <div className="room-tile-label"><div className="room-tile-meta"><span className="room-tile-avatar">{initials(peer.email)}</span><span><strong>{displayName(peer.email)}</strong><small>{peer.mic_enabled ? "Com áudio" : "Tela compartilhada"}</small></span></div><button className="room-tile-action" type="button" onClick={() => void toggleTileFullscreen(peer.id)} aria-label={fullscreenTile === peer.id ? "Sair da tela cheia" : `Abrir a tela de ${displayName(peer.email)} em tela cheia`} title={fullscreenTile === peer.id ? "Sair da tela cheia" : "Tela cheia"}><RoomIcon name={fullscreenTile === peer.id ? "exitFullscreen" : "fullscreen"} /></button></div>
-            <RoomVideo stream={remoteStreams[peer.id]} label={displayName(peer.email)} />
+            <div className="room-tile-label"><div className="room-tile-meta"><span className="room-tile-avatar">{peer.avatar_data ? <img className="room-tile-avatar-image" src={peer.avatar_data} alt="" /> : initials(peer.email, peer.alias)}</span><span><strong>{displayName(peer.email, peer.alias)}</strong><small>{peer.mic_enabled ? "Com áudio" : "Tela compartilhada"}</small></span></div><button className="room-tile-action" type="button" onClick={() => void toggleTileFullscreen(peer.id)} aria-label={fullscreenTile === peer.id ? "Sair da tela cheia" : `Abrir a tela de ${displayName(peer.email, peer.alias)} em tela cheia`} title={fullscreenTile === peer.id ? "Sair da tela cheia" : "Tela cheia"}><RoomIcon name={fullscreenTile === peer.id ? "exitFullscreen" : "fullscreen"} /></button></div>
+            <RoomVideo stream={remoteStreams[peer.id]} label={displayName(peer.email, peer.alias)} />
           </article>)}
           {!sharingCount ? <div className="room-empty"><span>▣</span><h2>Ninguém está compartilhando ainda</h2><p>Inicie uma transmissão para apresentar uma tarefa, fluxo ou demonstração ao projeto.</p></div> : null}
         </div>

@@ -51,10 +51,14 @@ func (s *PostgresStore) migrate(ctx context.Context) error {
 	_, err := s.pool.Exec(ctx, `
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
+    alias TEXT NOT NULL DEFAULT '',
     email TEXT NOT NULL,
+    avatar_data TEXT NOT NULL DEFAULT '',
     password_hash TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL
 );
+ALTER TABLE users ADD COLUMN IF NOT EXISTS alias TEXT NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_data TEXT NOT NULL DEFAULT '';
 CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_idx ON users (LOWER(email));
 
 CREATE TABLE IF NOT EXISTS projects (
@@ -104,8 +108,11 @@ type rowScanner interface {
 
 func scanUser(row rowScanner) (User, error) {
 	var user User
-	if err := row.Scan(&user.ID, &user.Email, &user.PasswordHash, &user.CreatedAt); err != nil {
+	if err := row.Scan(&user.ID, &user.Alias, &user.Email, &user.AvatarData, &user.PasswordHash, &user.CreatedAt); err != nil {
 		return User{}, translatePostgresError(err)
+	}
+	if user.Alias == "" {
+		user.Alias = strings.Split(user.Email, "@")[0]
 	}
 	return user, nil
 }
@@ -146,31 +153,43 @@ FROM projects p
 LEFT JOIN project_members pm ON pm.project_id = p.id`
 }
 
-func (s *PostgresStore) CreateUser(email, passwordHash string) (User, error) {
+func (s *PostgresStore) CreateUser(email, passwordHash string, profile ...string) (User, error) {
 	ctx := context.Background()
+	normalizedEmail := strings.ToLower(strings.TrimSpace(email))
+	alias := ""
+	avatarData := ""
+	if len(profile) > 0 {
+		alias = strings.TrimSpace(profile[0])
+	}
+	if len(profile) > 1 {
+		avatarData = strings.TrimSpace(profile[1])
+	}
+	if alias == "" {
+		alias = strings.Split(normalizedEmail, "@")[0]
+	}
 	return scanUser(s.pool.QueryRow(ctx, `
-INSERT INTO users (id, email, password_hash, created_at)
-VALUES ($1, $2, $3, $4)
-RETURNING id, email, password_hash, created_at`, newID(), strings.ToLower(strings.TrimSpace(email)), passwordHash, time.Now().UTC()))
+INSERT INTO users (id, alias, email, avatar_data, password_hash, created_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, alias, email, avatar_data, password_hash, created_at`, newID(), alias, normalizedEmail, avatarData, passwordHash, time.Now().UTC()))
 }
 
 func (s *PostgresStore) UserByEmail(email string) (User, error) {
 	return scanUser(s.pool.QueryRow(context.Background(), `
-SELECT id, email, password_hash, created_at
+SELECT id, alias, email, avatar_data, password_hash, created_at
 FROM users
 WHERE LOWER(email) = LOWER($1)`, strings.TrimSpace(email)))
 }
 
 func (s *PostgresStore) UserByID(id string) (User, error) {
 	return scanUser(s.pool.QueryRow(context.Background(), `
-SELECT id, email, password_hash, created_at
+SELECT id, alias, email, avatar_data, password_hash, created_at
 FROM users
 WHERE id = $1`, id))
 }
 
 func (s *PostgresStore) ListUsers(query string) []User {
 	rows, err := s.pool.Query(context.Background(), `
-SELECT id, email, password_hash, created_at
+SELECT id, alias, email, avatar_data, password_hash, created_at
 FROM users
 WHERE $1 = '' OR POSITION(LOWER($1) IN LOWER(email)) > 0
 ORDER BY email`, strings.ToLower(strings.TrimSpace(query)))
@@ -330,7 +349,7 @@ ON CONFLICT DO NOTHING`, projectID, userID)
 
 func (s *PostgresStore) ListProjectMembers(projectID string) ([]ProjectMember, error) {
 	rows, err := s.pool.Query(context.Background(), `
-SELECT u.id, u.email, u.password_hash, u.created_at, pm.role
+SELECT u.id, u.alias, u.email, u.avatar_data, u.password_hash, u.created_at, pm.role
 FROM project_members pm
 JOIN users u ON u.id = pm.user_id
 WHERE pm.project_id = $1
@@ -342,8 +361,11 @@ ORDER BY LOWER(u.email)`, projectID)
 	members := make([]ProjectMember, 0)
 	for rows.Next() {
 		var member ProjectMember
-		if err := rows.Scan(&member.User.ID, &member.User.Email, &member.User.PasswordHash, &member.User.CreatedAt, &member.Role); err != nil {
+		if err := rows.Scan(&member.User.ID, &member.User.Alias, &member.User.Email, &member.User.AvatarData, &member.User.PasswordHash, &member.User.CreatedAt, &member.Role); err != nil {
 			return nil, translatePostgresError(err)
+		}
+		if member.User.Alias == "" {
+			member.User.Alias = strings.Split(member.User.Email, "@")[0]
 		}
 		members = append(members, member)
 	}
