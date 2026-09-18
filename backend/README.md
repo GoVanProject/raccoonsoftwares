@@ -24,6 +24,8 @@ Variáveis disponíveis:
 - `DATABASE_URL`: URL obrigatória de conexão com o PostgreSQL.
 - `JWT_SECRET`: segredo obrigatório, com pelo menos 32 caracteres.
 - `CORS_ORIGIN`: origem permitida; padrão `http://localhost:3000`.
+- `STUN_URLS`: URLs STUN separadas por vírgula.
+- `TURN_HOST`, `TURN_PORT`, `TURN_SECRET`: dados públicos e segredo compartilhado usados para gerar credenciais temporárias do coturn.
 
 ## Autenticação
 
@@ -55,6 +57,8 @@ Authorization: Bearer <token>
 | `GET` | `/api/projects/:id/members` | Listar integrantes |
 | `POST` | `/api/projects/:id/members` | Adicionar integrante por `user_id` ou `email` |
 | `DELETE` | `/api/projects/:id/members/:userID` | Remover integrante |
+| `POST` | `/api/projects/:id/room/ticket` | Emitir ticket temporário da sala WebRTC |
+| `GET` | `/api/projects/:id/room/ws` | WebSocket de presença e sinalização WebRTC |
 | `GET` | `/api/projects/:id/tasks` | Listar tarefas do projeto |
 | `POST` | `/api/projects/:id/tasks` | Criar tarefa |
 | `GET` / `PATCH` / `DELETE` | `/api/tasks/:id` | Consultar, editar ou remover tarefa |
@@ -78,3 +82,5 @@ curl -X POST http://localhost:8080/api/projects/<PROJECT_ID>/tasks \
 ```
 
 O proprietário do projeto é incluído automaticamente como integrante. Apenas integrantes podem ler e editar tarefas; somente o proprietário gerencia projeto e equipe. Projetos podem ser editados pelo proprietário, e tarefas podem ser editadas por qualquer integrante.
+
+A sala ao vivo é temporária e permite até 10 participantes e duas telas compartilhadas. O backend não recebe nem armazena a mídia: ele apenas autentica a sala e retransmite mensagens de sinalização entre os navegadores.

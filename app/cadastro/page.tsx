@@ -36,7 +36,7 @@ export default function RegisterPage() {
   return (
     <main className="auth-page">
       <section className="auth-card">
-        <Link className="auth-brand" href="/">🦝 <span>RaccoonTech</span></Link>
+        <Link className="auth-brand" href="/">🦝 <span>RaccoonSoftwares</span></Link>
         <div className="auth-kicker">Comece agora</div>
         <h1>Crie seu workspace.</h1>
         <p className="auth-intro">Cadastre-se usando seu email e uma senha. Sem confirmação duplicada.</p>

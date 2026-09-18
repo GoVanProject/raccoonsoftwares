@@ -1,10 +1,10 @@
-# Plano de melhoria da landing page da RaccoonTech
+# Plano de melhoria da landing page da RaccoonSoftwares
 
 ## Objetivo
 
 Transformar a landing atual em uma página de conversão mais clara para negócios de serviços que precisam reduzir trabalho manual com IA e automação.
 
-A página deve comunicar uma oferta principal, provar que a RaccoonTech sabe executá-la e levar o visitante a uma única ação: iniciar uma conversa comercial pelo WhatsApp.
+A página deve comunicar uma oferta principal, provar que a RaccoonSoftwares sabe executá-la e levar o visitante a uma única ação: iniciar uma conversa comercial pelo WhatsApp.
 
 ## Diagnóstico da página atual
 
@@ -114,7 +114,7 @@ O texto começa com baixa opacidade e revela cada palavra em ordem de leitura qu
 
 ### FAQ
 
-#### Para quais negócios a RaccoonTech trabalha?
+#### Para quais negócios a RaccoonSoftwares trabalha?
 
 Principalmente negócios de serviços com atendimento recorrente, vendas consultivas ou processos operacionais repetitivos.
 
@@ -213,7 +213,7 @@ Requisitos dos dois arquivos:
 - Remover a repetição do mascote estático nessa mesma área.
 - Manter o dashboard como prova do produto.
 - Usar tamanho aproximado de 128 px em desktop e 96 px em mobile.
-- Usar `aria-label="Interagir com o guaxinim da RaccoonTech"`.
+- Usar `aria-label="Interagir com o guaxinim da RaccoonSoftwares"`.
 - Em touch, manter o mascote estático e clicável.
 - Em movimento reduzido, desabilitar squash e efeitos não essenciais.
 
@@ -226,7 +226,7 @@ import { Mascot } from "page-mascot";
   directions="/mascots/raccoon-directions.webp"
   reactions="/mascots/raccoon-reactions.webp"
   size={128}
-  label="guaxinim da RaccoonTech"
+  label="guaxinim da RaccoonSoftwares"
   className="hero-mascot"
 />;
 ```
@@ -241,9 +241,9 @@ Manter a página indexável. A oferta é evergreen e tem intenção de busca com
 
 ### Metadata
 
-Title: `IA e automação para negócios de serviços | RaccoonTech`
+Title: `IA e automação para negócios de serviços | RaccoonSoftwares`
 
-Description: `A RaccoonTech cria agents de IA, automações e sistemas sob medida para negócios de serviços reduzirem tarefas manuais e controlarem melhor a operação.`
+Description: `A RaccoonSoftwares cria agents de IA, automações e sistemas sob medida para negócios de serviços reduzirem tarefas manuais e controlarem melhor a operação.`
 
 Adicionar `og:image`, favicon, canonical, dados estruturados de FAQ quando as respostas forem definitivas e links internos para projetos relevantes.
 
@@ -287,7 +287,7 @@ Adicionar `og:image`, favicon, canonical, dados estruturados de FAQ quando as re
 
 ## Critérios de aceite
 
-- Uma pessoa do público entende em cinco segundos o que a RaccoonTech faz, para quem e qual é o próximo passo.
+- Uma pessoa do público entende em cinco segundos o que a RaccoonSoftwares faz, para quem e qual é o próximo passo.
 - O hero tem apenas uma ação principal visível.
 - O CTA abre um destino real e contém contexto sobre o próximo passo.
 - Nenhuma métrica, depoimento ou resultado sem fonte aparece como prova.

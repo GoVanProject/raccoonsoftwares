@@ -19,6 +19,13 @@ var (
 	ErrInvalid       = errors.New("dados inválidos")
 	ErrNotMember     = errors.New("usuário não pertence ao projeto")
 	ErrOwnerRequired = errors.New("somente o proprietário pode realizar esta ação")
+	ErrReadOnly      = errors.New("este membro tem permissão somente para visualização")
+)
+
+const (
+	MemberRoleOwner  = "owner"
+	MemberRoleEditor = "editor"
+	MemberRoleViewer = "viewer"
 )
 
 type User struct {
@@ -29,14 +36,20 @@ type User struct {
 }
 
 type Project struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	ImageData   string    `json:"image_data,omitempty"`
-	OwnerID     string    `json:"owner_id"`
-	MemberIDs   []string  `json:"member_ids"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	Description string            `json:"description"`
+	ImageData   string            `json:"image_data,omitempty"`
+	OwnerID     string            `json:"owner_id"`
+	MemberIDs   []string          `json:"member_ids"`
+	MemberRoles map[string]string `json:"member_roles,omitempty"`
+	CreatedAt   time.Time         `json:"created_at"`
+	UpdatedAt   time.Time         `json:"updated_at"`
+}
+
+type ProjectMember struct {
+	User User
+	Role string
 }
 
 type Task struct {
@@ -79,6 +92,8 @@ type Repository interface {
 	DeleteProject(id, actorID string) error
 	AddMember(projectID, actorID, userID string) (Project, error)
 	RemoveMember(projectID, actorID, userID string) error
+	ListProjectMembers(projectID string) ([]ProjectMember, error)
+	UpdateMemberRole(projectID, actorID, userID, role string) ([]ProjectMember, error)
 	TasksByProject(projectID string) []Task
 	TaskCountByProject(projectID string) int
 	CreateTask(projectID, creatorID, title, description, status, priority, assigneeID, dueDate string) (Task, error)
@@ -169,7 +184,7 @@ func (s *Store) CreateProject(ownerID, name, description, imageData string) (Pro
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
-	project := Project{ID: newID(), Name: name, Description: description, ImageData: imageData, OwnerID: ownerID, MemberIDs: []string{ownerID}, CreatedAt: now, UpdatedAt: now}
+	project := Project{ID: newID(), Name: name, Description: description, ImageData: imageData, OwnerID: ownerID, MemberIDs: []string{ownerID}, MemberRoles: map[string]string{ownerID: MemberRoleOwner}, CreatedAt: now, UpdatedAt: now}
 	s.data.Projects[project.ID] = project
 	return project, s.persistLocked()
 }
@@ -182,6 +197,7 @@ func (s *Store) ProjectByID(id string) (Project, error) {
 		return Project{}, ErrNotFound
 	}
 	project.MemberIDs = append([]string(nil), project.MemberIDs...)
+	project.MemberRoles = cloneMemberRoles(project.MemberRoles)
 	return project, nil
 }
 
@@ -192,6 +208,7 @@ func (s *Store) ListProjects(userID string) []Project {
 	for _, project := range s.data.Projects {
 		if project.OwnerID == userID || contains(project.MemberIDs, userID) {
 			project.MemberIDs = append([]string(nil), project.MemberIDs...)
+			project.MemberRoles = cloneMemberRoles(project.MemberRoles)
 			projects = append(projects, project)
 		}
 	}
@@ -252,6 +269,10 @@ func (s *Store) AddMember(projectID, actorID, userID string) (Project, error) {
 	}
 	if !contains(project.MemberIDs, userID) {
 		project.MemberIDs = append(project.MemberIDs, userID)
+		if project.MemberRoles == nil {
+			project.MemberRoles = make(map[string]string)
+		}
+		project.MemberRoles[userID] = MemberRoleEditor
 		project.UpdatedAt = time.Now().UTC()
 		s.data.Projects[projectID] = project
 		if err := s.persistLocked(); err != nil {
@@ -281,6 +302,9 @@ func (s *Store) RemoveMember(projectID, actorID, userID string) error {
 		}
 	}
 	project.MemberIDs = filtered
+	if project.MemberRoles != nil {
+		delete(project.MemberRoles, userID)
+	}
 	project.UpdatedAt = time.Now().UTC()
 	s.data.Projects[projectID] = project
 	for taskID, task := range s.data.Tasks {
@@ -293,6 +317,60 @@ func (s *Store) RemoveMember(projectID, actorID, userID string) error {
 	return s.persistLocked()
 }
 
+func (s *Store) ListProjectMembers(projectID string) ([]ProjectMember, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	project, ok := s.data.Projects[projectID]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	members := make([]ProjectMember, 0, len(project.MemberIDs))
+	for _, memberID := range project.MemberIDs {
+		user, exists := s.data.Users[memberID]
+		if !exists {
+			continue
+		}
+		members = append(members, ProjectMember{User: user, Role: memberRole(project, memberID)})
+	}
+	return members, nil
+}
+
+func (s *Store) UpdateMemberRole(projectID, actorID, userID, role string) ([]ProjectMember, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	project, ok := s.data.Projects[projectID]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	if project.OwnerID != actorID {
+		return nil, ErrOwnerRequired
+	}
+	if userID == project.OwnerID || !contains(project.MemberIDs, userID) {
+		return nil, ErrInvalid
+	}
+	if role != MemberRoleEditor && role != MemberRoleViewer {
+		return nil, ErrInvalid
+	}
+	if project.MemberRoles == nil {
+		project.MemberRoles = make(map[string]string)
+	}
+	project.MemberRoles[userID] = role
+	project.UpdatedAt = time.Now().UTC()
+	s.data.Projects[projectID] = project
+	if err := s.persistLocked(); err != nil {
+		return nil, err
+	}
+
+	members := make([]ProjectMember, 0, len(project.MemberIDs))
+	for _, memberID := range project.MemberIDs {
+		user, exists := s.data.Users[memberID]
+		if exists {
+			members = append(members, ProjectMember{User: user, Role: memberRole(project, memberID)})
+		}
+	}
+	return members, nil
+}
+
 func (s *Store) CreateTask(projectID, creatorID, title, description, status, priority, assigneeID, dueDate string) (Task, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -302,6 +380,9 @@ func (s *Store) CreateTask(projectID, creatorID, title, description, status, pri
 	}
 	if !contains(project.MemberIDs, creatorID) {
 		return Task{}, ErrNotMember
+	}
+	if memberRole(project, creatorID) == MemberRoleViewer {
+		return Task{}, ErrReadOnly
 	}
 	if assigneeID != "" && !contains(project.MemberIDs, assigneeID) {
 		return Task{}, ErrNotMember
@@ -360,6 +441,9 @@ func (s *Store) UpdateTask(id, actorID, title, description, status, priority, as
 	if !contains(project.MemberIDs, actorID) {
 		return Task{}, ErrNotMember
 	}
+	if memberRole(project, actorID) == MemberRoleViewer {
+		return Task{}, ErrReadOnly
+	}
 	if assigneeID != "" && !contains(project.MemberIDs, assigneeID) {
 		return Task{}, ErrNotMember
 	}
@@ -389,6 +473,9 @@ func (s *Store) DeleteTask(id, actorID string) error {
 	}
 	if !contains(project.MemberIDs, actorID) {
 		return ErrNotMember
+	}
+	if memberRole(project, actorID) == MemberRoleViewer {
+		return ErrReadOnly
 	}
 	delete(s.data.Tasks, id)
 	return s.persistLocked()
@@ -436,6 +523,27 @@ func contains(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func memberRole(project Project, userID string) string {
+	if project.OwnerID == userID {
+		return MemberRoleOwner
+	}
+	if role := project.MemberRoles[userID]; role == MemberRoleViewer || role == MemberRoleEditor {
+		return role
+	}
+	return MemberRoleEditor
+}
+
+func cloneMemberRoles(roles map[string]string) map[string]string {
+	if roles == nil {
+		return nil
+	}
+	copy := make(map[string]string, len(roles))
+	for userID, role := range roles {
+		copy[userID] = role
+	}
+	return copy
 }
 
 func newID() string {

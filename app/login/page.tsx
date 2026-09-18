@@ -36,7 +36,7 @@ export default function LoginPage() {
   return (
     <main className="auth-page">
       <section className="auth-card">
-        <Link className="auth-brand" href="/">🦝 <span>RaccoonTech</span></Link>
+        <Link className="auth-brand" href="/">🦝 <span>RaccoonSoftwares</span></Link>
         <div className="auth-kicker">Workspace</div>
         <h1>Entrar no seu quadro.</h1>
         <p className="auth-intro">Organize projetos, tarefas e a equipe em um só lugar.</p>

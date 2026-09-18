@@ -18,16 +18,25 @@ import (
 
 type Config struct {
 	CORSOrigin string
+	STUNURLs   []string
+	TURN       *TURNConfig
+}
+
+type TURNConfig struct {
+	Host   string
+	Port   int
+	Secret string
 }
 
 type Server struct {
 	store  store.Repository
 	tokens *auth.TokenService
 	config Config
+	rooms  *roomManager
 }
 
 func NewServer(database store.Repository, tokens *auth.TokenService, config Config) *Server {
-	return &Server{store: database, tokens: tokens, config: config}
+	return &Server{store: database, tokens: tokens, config: config, rooms: newRoomManager()}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -45,7 +54,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/projects/{projectID}", s.requireAuth(s.deleteProject))
 	mux.HandleFunc("GET /api/projects/{projectID}/members", s.requireAuth(s.listMembers))
 	mux.HandleFunc("POST /api/projects/{projectID}/members", s.requireAuth(s.addMember))
+	mux.HandleFunc("PATCH /api/projects/{projectID}/members/{userID}", s.requireAuth(s.updateMemberRole))
 	mux.HandleFunc("DELETE /api/projects/{projectID}/members/{userID}", s.requireAuth(s.removeMember))
+	mux.HandleFunc("POST /api/projects/{projectID}/room/ticket", s.requireAuth(s.createRoomTicket))
+	mux.HandleFunc("GET /api/projects/{projectID}/room/ws", s.roomWebSocket)
 	mux.HandleFunc("GET /api/projects/{projectID}/tasks", s.requireAuth(s.listTasks))
 	mux.HandleFunc("POST /api/projects/{projectID}/tasks", s.requireAuth(s.createTask))
 
@@ -252,6 +264,10 @@ type memberRequest struct {
 	Email  string `json:"email"`
 }
 
+type memberRoleRequest struct {
+	Role string `json:"role"`
+}
+
 func (s *Server) listMembers(w http.ResponseWriter, r *http.Request, userID string) {
 	project, err := s.store.ProjectByID(r.PathValue("projectID"))
 	if err != nil {
@@ -262,15 +278,17 @@ func (s *Server) listMembers(w http.ResponseWriter, r *http.Request, userID stri
 		writeError(w, http.StatusForbidden, "você não tem acesso a este projeto")
 		return
 	}
-	users := make([]publicUserResponse, 0, len(project.MemberIDs))
-	for _, memberID := range project.MemberIDs {
-		member, err := s.store.UserByID(memberID)
-		if err == nil {
-			users = append(users, publicUser(member))
-		}
+	members, err := s.store.ListProjectMembers(project.ID)
+	if err != nil {
+		writeStoreError(w, err)
+		return
 	}
-	sort.Slice(users, func(i, j int) bool { return users[i].Email < users[j].Email })
-	writeJSON(w, http.StatusOK, map[string]any{"members": users})
+	response := make([]projectMemberResponse, 0, len(members))
+	for _, member := range members {
+		response = append(response, projectMember(member))
+	}
+	sort.Slice(response, func(i, j int) bool { return response[i].Email < response[j].Email })
+	writeJSON(w, http.StatusOK, map[string]any{"members": response})
 }
 
 func (s *Server) addMember(w http.ResponseWriter, r *http.Request, userID string) {
@@ -297,6 +315,24 @@ func (s *Server) addMember(w http.ResponseWriter, r *http.Request, userID string
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"project": s.projectView(project)})
+}
+
+func (s *Server) updateMemberRole(w http.ResponseWriter, r *http.Request, userID string) {
+	var request memberRoleRequest
+	if !readJSON(w, r, &request) {
+		return
+	}
+	members, err := s.store.UpdateMemberRole(r.PathValue("projectID"), userID, r.PathValue("userID"), strings.TrimSpace(request.Role))
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	response := make([]projectMemberResponse, 0, len(members))
+	for _, member := range members {
+		response = append(response, projectMember(member))
+	}
+	sort.Slice(response, func(i, j int) bool { return response[i].Email < response[j].Email })
+	writeJSON(w, http.StatusOK, map[string]any{"members": response})
 }
 
 func (s *Server) removeMember(w http.ResponseWriter, r *http.Request, userID string) {
@@ -477,6 +513,13 @@ type publicUserResponse struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type projectMemberResponse struct {
+	ID        string    `json:"id"`
+	Email     string    `json:"email"`
+	Role      string    `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type projectResponse struct {
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`
@@ -491,6 +534,10 @@ type projectResponse struct {
 
 func publicUser(user store.User) publicUserResponse {
 	return publicUserResponse{ID: user.ID, Email: user.Email, CreatedAt: user.CreatedAt}
+}
+
+func projectMember(member store.ProjectMember) projectMemberResponse {
+	return projectMemberResponse{ID: member.User.ID, Email: member.User.Email, Role: member.Role, CreatedAt: member.User.CreatedAt}
 }
 
 func (s *Server) projectView(project store.Project) projectResponse {
@@ -627,6 +674,8 @@ func writeStoreError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, "usuário não pertence ao projeto")
 	case errors.Is(err, store.ErrOwnerRequired):
 		writeError(w, http.StatusForbidden, "somente o proprietário pode realizar esta ação")
+	case errors.Is(err, store.ErrReadOnly):
+		writeError(w, http.StatusForbidden, "este membro tem permissão somente para visualização")
 	case errors.Is(err, store.ErrInvalid):
 		writeError(w, http.StatusBadRequest, "operação inválida")
 	default:
