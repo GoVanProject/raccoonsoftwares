@@ -47,6 +47,14 @@ services:
       TURN_SECRET: ${TURN_SECRET:?defina TURN_SECRET no arquivo .env}
     expose:
       - "8080"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.raccoon-api.rule=Host(`api.raccoonsoftwares.com`)"
+      - "traefik.http.routers.raccoon-api.entrypoints=websecure"
+      - "traefik.http.routers.raccoon-api.tls=true"
+      - "traefik.http.routers.raccoon-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.raccoon-api.service=raccoon-api"
+      - "traefik.http.services.raccoon-api.loadbalancer.server.port=8080"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]

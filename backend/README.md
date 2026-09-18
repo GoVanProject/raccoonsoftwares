@@ -56,6 +56,7 @@ Authorization: Bearer <token>
 | `PATCH` / `DELETE` | `/api/projects/:id` | Editar ou remover projeto (proprietário) |
 | `GET` | `/api/projects/:id/members` | Listar integrantes |
 | `POST` | `/api/projects/:id/members` | Adicionar integrante por `user_id` ou `email` |
+| `PATCH` | `/api/projects/:id/members/:userID` | Alterar permissão do integrante |
 | `DELETE` | `/api/projects/:id/members/:userID` | Remover integrante |
 | `POST` | `/api/projects/:id/room/ticket` | Emitir ticket temporário da sala WebRTC |
 | `GET` | `/api/projects/:id/room/ws` | WebSocket de presença e sinalização WebRTC |
