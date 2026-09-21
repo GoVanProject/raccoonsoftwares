@@ -8,7 +8,7 @@ services:
     volumes:
       - taskboard_postgres_data:/var/lib/postgresql/data
     ports:
-      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-15432}:5432"
     expose:
       - "5432"
     healthcheck:
@@ -16,21 +16,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-    restart: unless-stopped
-
-  turn:
-    image: coturn/coturn:4.6
-    command: >-
-      -n --log-file=stdout --fingerprint
-      --use-auth-secret --static-auth-secret=${TURN_SECRET:?defina TURN_SECRET no arquivo .env}
-      --realm=${TURN_REALM:-raccoonsoftwares}
-      --listening-port=3478
-      --min-port=${TURN_MIN_PORT:-49152}
-      --max-port=${TURN_MAX_PORT:-49252}
-    ports:
-      - "${TURN_PORT:-3478}:3478/tcp"
-      - "${TURN_PORT:-3478}:3478/udp"
-      - "${TURN_MIN_PORT:-49152}-${TURN_MAX_PORT:-49252}:${TURN_MIN_PORT:-49152}-${TURN_MAX_PORT:-49252}/udp"
     restart: unless-stopped
 
   api:
@@ -44,9 +29,9 @@ services:
       STUN_URLS: ${STUN_URLS:-}
       TURN_HOST: ${TURN_HOST:-}
       TURN_PORT: ${TURN_PORT:-3478}
-      TURN_SECRET: ${TURN_SECRET:?defina TURN_SECRET no arquivo .env}
-    expose:
-      - "8080"
+      TURN_SECRET: ${TURN_SECRET:-}
+    ports:
+      - "${API_PORT:-18080}:8080"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.raccoon-api.rule=Host(`api.raccoonsoftwares.com`)"
@@ -65,34 +50,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      turn:
-        condition: service_started
-
-  frontend:
-    build:
-      context: .
-      args:
-        # Empty means same-origin requests through the nginx service.
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
-    expose:
-      - "3000"
-    restart: unless-stopped
-    depends_on:
-      api:
-        condition: service_healthy
-
-  proxy:
-    image: nginx:1.27-alpine
-    ports:
-      - "${HTTP_PORT:-80}:80"
-    volumes:
-      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on:
-      api:
-        condition: service_healthy
-      frontend:
-        condition: service_started
-    restart: unless-stopped
 
 volumes:
   taskboard_postgres_data:
