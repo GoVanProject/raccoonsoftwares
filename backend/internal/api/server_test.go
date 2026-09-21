@@ -110,6 +110,18 @@ func TestRegisterProfile(t *testing.T) {
 	if user["alias"] != "Nina" || user["email"] != "nina@example.com" || user["avatar_data"] != avatar {
 		t.Fatalf("perfil não foi persistido na resposta: %#v", user)
 	}
+	updated := call(t, handler, http.MethodPatch, "/api/auth/me", registered["token"].(string), map[string]any{
+		"alias":                 "Nina Lima",
+		"email":                 "nina.lima@example.com",
+		"password":              "senha-nova",
+		"password_confirmation": "senha-nova",
+		"avatar_data":           "",
+	}, http.StatusOK)
+	updatedUser := updated["user"].(map[string]any)
+	if updatedUser["alias"] != "Nina Lima" || updatedUser["email"] != "nina.lima@example.com" || updatedUser["avatar_data"] != nil {
+		t.Fatalf("perfil não foi atualizado: %#v", updatedUser)
+	}
+	call(t, handler, http.MethodPost, "/api/auth/login", "", map[string]any{"email": "nina.lima@example.com", "password": "senha-nova"}, http.StatusOK)
 	call(t, handler, http.MethodPost, "/api/auth/register", "", map[string]any{
 		"alias":                 "Nina",
 		"email":                 "outra@example.com",

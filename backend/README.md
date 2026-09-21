@@ -50,6 +50,7 @@ Authorization: Bearer <token>
 | `POST` | `/api/auth/register` | Criar usuário e iniciar sessão |
 | `POST` | `/api/auth/login` | Entrar com email e senha |
 | `GET` | `/api/auth/me` | Usuário autenticado |
+| `PATCH` | `/api/auth/me` | Editar alias, email, senha ou foto do usuário autenticado |
 | `GET` | `/api/users?q=` | Buscar usuários para adicionar à equipe |
 | `GET` | `/api/projects` | Listar projetos acessíveis |
 | `POST` | `/api/projects` | Criar projeto |

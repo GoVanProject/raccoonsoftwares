@@ -86,6 +86,7 @@ type Repository interface {
 	CreateUser(email, passwordHash string, profile ...string) (User, error)
 	UserByEmail(email string) (User, error)
 	UserByID(id string) (User, error)
+	UpdateUser(id, alias, email, passwordHash, avatarData string) (User, error)
 	ListUsers(query string) []User
 	ListProjects(userID string) []Project
 	CreateProject(ownerID, name, description, imageData string) (Project, error)
@@ -179,6 +180,29 @@ func (s *Store) UserByID(id string) (User, error) {
 		return User{}, ErrNotFound
 	}
 	return user, nil
+}
+
+func (s *Store) UpdateUser(id, alias, email, passwordHash, avatarData string) (User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	user, ok := s.data.Users[id]
+	if !ok {
+		return User{}, ErrNotFound
+	}
+	normalizedEmail := strings.ToLower(strings.TrimSpace(email))
+	for otherID, existing := range s.data.Users {
+		if otherID != id && strings.EqualFold(existing.Email, normalizedEmail) {
+			return User{}, ErrConflict
+		}
+	}
+	user.Alias = strings.TrimSpace(alias)
+	user.Email = normalizedEmail
+	user.AvatarData = strings.TrimSpace(avatarData)
+	if passwordHash != "" {
+		user.PasswordHash = passwordHash
+	}
+	s.data.Users[id] = user
+	return user, s.persistLocked()
 }
 
 func (s *Store) ListUsers(query string) []User {

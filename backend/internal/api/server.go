@@ -45,6 +45,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/auth/register", s.register)
 	mux.HandleFunc("POST /api/auth/login", s.login)
 	mux.HandleFunc("GET /api/auth/me", s.requireAuth(s.me))
+	mux.HandleFunc("PATCH /api/auth/me", s.requireAuth(s.updateMe))
 	mux.HandleFunc("GET /api/users", s.requireAuth(s.listUsers))
 
 	mux.HandleFunc("GET /api/projects", s.requireAuth(s.listProjects))
@@ -83,6 +84,14 @@ type registerRequest struct {
 	Password             string `json:"password"`
 	PasswordConfirmation string `json:"password_confirmation"`
 	AvatarData           string `json:"avatar_data"`
+}
+
+type profileUpdateRequest struct {
+	Alias                *string `json:"alias"`
+	Email                *string `json:"email"`
+	Password             *string `json:"password"`
+	PasswordConfirmation *string `json:"password_confirmation"`
+	AvatarData           *string `json:"avatar_data"`
 }
 
 func (s *Server) register(w http.ResponseWriter, r *http.Request) {
@@ -165,6 +174,70 @@ func (s *Server) me(w http.ResponseWriter, _ *http.Request, userID string) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"user": publicUser(user)})
+}
+
+func (s *Server) updateMe(w http.ResponseWriter, r *http.Request, userID string) {
+	current, err := s.store.UserByID(userID)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "usuário não encontrado")
+		return
+	}
+	var request profileUpdateRequest
+	if !readJSON(w, r, &request) {
+		return
+	}
+	alias := userAlias(current)
+	if request.Alias != nil {
+		alias = strings.TrimSpace(*request.Alias)
+	}
+	if alias == "" || len(alias) > 60 {
+		writeError(w, http.StatusBadRequest, "o nome é obrigatório e deve ter até 60 caracteres")
+		return
+	}
+	email := current.Email
+	if request.Email != nil {
+		email = strings.TrimSpace(*request.Email)
+	}
+	normalizedEmail, err := validateEmail(email)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	passwordHash := ""
+	if request.Password != nil && *request.Password != "" {
+		password := *request.Password
+		if len(password) < 8 {
+			writeError(w, http.StatusBadRequest, "a nova senha deve ter pelo menos 8 caracteres")
+			return
+		}
+		if request.PasswordConfirmation == nil || *request.PasswordConfirmation != password {
+			writeError(w, http.StatusBadRequest, "as senhas não conferem")
+			return
+		}
+		passwordHash, err = auth.HashPassword(password)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "não foi possível proteger a senha")
+			return
+		}
+	}
+	avatarData := current.AvatarData
+	if request.AvatarData != nil {
+		avatarData = strings.TrimSpace(*request.AvatarData)
+	}
+	if err := validateAvatarData(avatarData); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	updated, err := s.store.UpdateUser(userID, alias, normalizedEmail, passwordHash, avatarData)
+	if err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			writeError(w, http.StatusConflict, "este email já está cadastrado")
+			return
+		}
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"user": publicUser(updated)})
 }
 
 func (s *Server) listUsers(w http.ResponseWriter, r *http.Request, _ string) {
@@ -597,18 +670,26 @@ func projectAccessible(project store.Project, userID string) bool {
 }
 
 func validateCredentials(request credentialsRequest) (string, string, error) {
-	email := strings.ToLower(strings.TrimSpace(request.Email))
-	if len(email) > 254 {
-		return "", "", errors.New("email inválido")
-	}
-	parsed, err := mail.ParseAddress(email)
-	if err != nil || parsed.Address != email || !strings.Contains(email, "@") {
-		return "", "", errors.New("email inválido")
+	email, err := validateEmail(request.Email)
+	if err != nil {
+		return "", "", err
 	}
 	if len(request.Password) < 8 {
 		return "", "", errors.New("a senha deve ter pelo menos 8 caracteres")
 	}
 	return email, request.Password, nil
+}
+
+func validateEmail(rawEmail string) (string, error) {
+	email := strings.ToLower(strings.TrimSpace(rawEmail))
+	if len(email) > 254 {
+		return "", errors.New("email inválido")
+	}
+	parsed, err := mail.ParseAddress(email)
+	if err != nil || parsed.Address != email || !strings.Contains(email, "@") {
+		return "", errors.New("email inválido")
+	}
+	return email, nil
 }
 
 const (

@@ -15,6 +15,7 @@ export type WorkspaceIconName =
   | "mic"
   | "micOff"
   | "moon"
+  | "profile"
   | "plus"
   | "screen"
   | "sun"
@@ -30,7 +31,7 @@ type AvatarMember = {
 };
 
 type WorkspaceRailProps = {
-  mode: "workspace" | "room";
+  mode: "workspace" | "room" | "profile";
   projectId?: string;
   expanded?: boolean;
   onToggleExpanded?: () => void;
@@ -61,6 +62,7 @@ export function WorkspaceIcon({ name }: { name: WorkspaceIconName }) {
     mic: <><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7" /></>,
     micOff: <><path d="m4 4 16 16" /><path d="M9 9v5a3 3 0 0 0 5.2 2.05M15 9V6a3 3 0 0 0-5.2-2.05" /><path d="M5.5 11a6.5 6.5 0 0 0 9.2 5.9M12 17.5V21M8.5 21h7" /></>,
     moon: <path d="M20.5 14.6A8.6 8.6 0 0 1 9.4 3.5 8.7 8.7 0 1 0 20.5 14.6Z" />,
+    profile: <><circle cx="12" cy="8" r="3.2" /><path d="M5 20a7 7 0 0 1 14 0" /></>,
     plus: <><path d="M12 5v14M5 12h14" /></>,
     screen: <><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8M12 17v4" /></>,
     sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></>,
@@ -188,8 +190,11 @@ export function WorkspaceRail({ mode, projectId, expanded = false, onToggleExpan
       <div className="workspace-rail-bottom">
         <ThemeToggle />
         <div className="workspace-rail-divider" />
-        <button className="workspace-rail-profile" type="button" onClick={onLogout} aria-label="Sair da conta" title="Sair da conta" data-tooltip="Sair">
-          <WorkspaceIcon name="logout" />
+        <Link className={`workspace-rail-profile ${mode === "profile" ? "is-active" : ""}`} href="/workspace/profile" aria-label="Abrir perfil" aria-current={mode === "profile" ? "page" : undefined} title="Abrir perfil" data-tooltip="Perfil">
+          <WorkspaceIcon name="profile" />
+        </Link>
+        <button className="workspace-rail-action workspace-rail-logout" type="button" onClick={onLogout} aria-label="Sair da conta" title="Sair da conta" data-tooltip="Sair">
+          <WorkspaceIcon name="logout" /><span className="workspace-rail-label">Sair</span>
         </button>
       </div>
     </nav>

@@ -173,6 +173,17 @@ VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id, alias, email, avatar_data, password_hash, created_at`, newID(), alias, normalizedEmail, avatarData, passwordHash, time.Now().UTC()))
 }
 
+func (s *PostgresStore) UpdateUser(id, alias, email, passwordHash, avatarData string) (User, error) {
+	return scanUser(s.pool.QueryRow(context.Background(), `
+UPDATE users
+SET alias = $2,
+    email = $3,
+    avatar_data = $4,
+    password_hash = CASE WHEN $5 = '' THEN password_hash ELSE $5 END
+WHERE id = $1
+RETURNING id, alias, email, avatar_data, password_hash, created_at`, id, strings.TrimSpace(alias), strings.ToLower(strings.TrimSpace(email)), strings.TrimSpace(avatarData), passwordHash))
+}
+
 func (s *PostgresStore) UserByEmail(email string) (User, error) {
 	return scanUser(s.pool.QueryRow(context.Background(), `
 SELECT id, alias, email, avatar_data, password_hash, created_at
