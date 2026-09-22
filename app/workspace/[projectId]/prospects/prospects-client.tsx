@@ -185,6 +185,7 @@ export default function ProspectsClient({ projectId }: { projectId: string }) {
   const [draggedLeadID, setDraggedLeadID] = useState<string | null>(null);
   const [dragOverStatus, setDragOverStatus] = useState<Status | null>(null);
   const [movingLeadID, setMovingLeadID] = useState<string | null>(null);
+  const [railExpanded, setRailExpanded] = useState(false);
 
   const selectedLead = leads.find((lead) => lead.id === selectedLeadID) || null;
   const readOnly = members.find((member) => member.id === currentUserID)?.role === "viewer";
@@ -201,6 +202,11 @@ export default function ProspectsClient({ projectId }: { projectId: string }) {
   const loadLeadData = useCallback(async (accessToken: string) => {
     setLoading(true);
     try {
+      const projectListResponse = await taskboardFetch<{ projects: Project[] }>("/api/projects", accessToken);
+      if (!projectListResponse.projects.some((item) => item.id === projectId)) {
+        router.replace("/workspace?error=project-not-found");
+        return;
+      }
       const [projectResponse, memberResponse, leadResponse, userResponse] = await Promise.all([
         taskboardFetch<{ project: Project }>(`/api/projects/${projectId}`, accessToken),
         taskboardFetch<{ members: Member[] }>(`/api/projects/${projectId}/members`, accessToken),
@@ -215,6 +221,8 @@ export default function ProspectsClient({ projectId }: { projectId: string }) {
       if (reason instanceof Error && reason.message.includes("token")) {
         window.localStorage.removeItem("taskboard_token");
         router.replace("/login");
+      } else if (reason instanceof Error && (reason.message.includes("acesso") || reason.message.includes("encontrado"))) {
+        router.replace("/workspace?error=project-not-found");
       } else {
         setError(reason instanceof Error ? reason.message : "Não foi possível carregar a prospecção.");
       }
@@ -428,13 +436,15 @@ export default function ProspectsClient({ projectId }: { projectId: string }) {
   return (
     <main className="workspace-page prospects-page">
       <div className="workspace-layout">
-        <WorkspaceRail mode="prospects" projectId={projectId} onLogout={() => { window.localStorage.removeItem("taskboard_token"); router.push("/login"); }} />
+        <div className={`workspace-navigation-shell ${railExpanded ? "is-rail-expanded" : ""}`}>
+          <WorkspaceRail mode="prospects" projectId={projectId} expanded={railExpanded} onToggleExpanded={() => setRailExpanded((current) => !current)} onLogout={() => { window.localStorage.removeItem("taskboard_token"); router.push("/login"); }} />
+        </div>
         <section className="prospects-main">
           {error ? <div className="workspace-error" role="alert">{error}<button type="button" onClick={() => setError("")}>×</button></div> : null}
           {notice ? <div className="prospects-notice" role="status">{notice}<button type="button" onClick={() => setNotice("")}>×</button></div> : null}
           <header className="prospects-heading">
             <div>
-              <Link className="prospects-back" href="/workspace"><WorkspaceIcon name="back" />Voltar ao workspace</Link>
+              <Link className="prospects-back" href={`/workspace/${projectId}`}><WorkspaceIcon name="back" />Voltar ao quadro</Link>
               <span className="workspace-kicker">{project?.name || "Projeto"} · prospecção</span>
               <h1>Mapa de restaurantes</h1>
               <p>Veja onde estão os negócios e organize o próximo contato comercial em um só lugar.</p>

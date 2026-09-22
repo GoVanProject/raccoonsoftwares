@@ -1,7 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+
+import { taskboardFetch } from "../../lib/taskboard";
 
 export type WorkspaceIconName =
   | "back"
@@ -23,6 +26,13 @@ export type WorkspaceIconName =
   | "users"
   | "chevron";
 
+export type WorkspaceProject = {
+  id: string;
+  name: string;
+  task_count: number;
+  image_data?: string;
+};
+
 type AvatarMember = {
   id: string;
   alias?: string;
@@ -31,14 +41,13 @@ type AvatarMember = {
   publishing?: boolean;
 };
 
+type WorkspaceMode = "select" | "board" | "team" | "prospects" | "room" | "profile";
+
 type WorkspaceRailProps = {
-  mode: "workspace" | "prospects" | "room" | "profile";
+  mode: WorkspaceMode;
   projectId?: string;
   expanded?: boolean;
   onToggleExpanded?: () => void;
-  projectPanelOpen?: boolean;
-  onToggleProjects?: () => void;
-  onTeamClick?: () => void;
   onLogout: () => void;
 };
 
@@ -68,7 +77,7 @@ export function WorkspaceIcon({ name }: { name: WorkspaceIconName }) {
     plus: <><path d="M12 5v14M5 12h14" /></>,
     screen: <><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8M12 17v4" /></>,
     sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></>,
-    users: <><path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20" /><circle cx="10" cy="8" r="3" /><path d="M16 11a3 3 0 0 0 0-6M19.5 20v-1.5a3 3 0 0 0-2.5-3.35" /></>,
+    users: <><path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20" /><circle cx="10" cy="8" r="3" /><path d="M16 11a3 3 0 0 0 0-6M19.5 20v-1.5a3.5 3.5 0 0 0-2.5-3.35" /></>,
     chevron: <path d="m9 18 6-6-6-6" />,
   };
 
@@ -138,37 +147,108 @@ function ThemeToggle() {
   );
 }
 
-export function WorkspaceRail({ mode, projectId, expanded = false, onToggleExpanded, projectPanelOpen = false, onToggleProjects, onTeamClick, onLogout }: WorkspaceRailProps) {
-  const roomHref = projectId ? `/workspace/${projectId}/room` : "/workspace";
-  const projectsButton = onToggleProjects ? (
-    <button
-      className={`workspace-rail-action ${projectPanelOpen ? "is-active" : ""}`}
-      type="button"
-      onClick={onToggleProjects}
-      aria-label="Abrir projetos"
-      aria-expanded={projectPanelOpen}
-      data-tooltip="Projetos"
-    >
-      <WorkspaceIcon name="folder" /><span className="workspace-rail-label">Projetos</span>
-    </button>
-  ) : (
-    <Link className="workspace-rail-action" href="/workspace" aria-label="Abrir projetos" data-tooltip="Projetos">
-      <WorkspaceIcon name="folder" /><span className="workspace-rail-label">Projetos</span>
-    </Link>
-  );
+function ProjectSwitcher({ projectId, onProjectInvalid }: { projectId?: string; onProjectInvalid?: () => void }) {
+  const router = useRouter();
+  const switcherRef = useRef<HTMLDivElement>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [projects, setProjects] = useState<WorkspaceProject[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState("");
 
-  const teamAction = onTeamClick ? (
-    <button className="workspace-rail-action" type="button" onClick={onTeamClick} aria-label="Abrir equipe" data-tooltip="Equipe">
-      <WorkspaceIcon name="users" /><span className="workspace-rail-label">Equipe</span>
-    </button>
-  ) : (
-    <Link className="workspace-rail-action" href="/workspace" aria-label="Abrir equipe" data-tooltip="Equipe">
-      <WorkspaceIcon name="users" /><span className="workspace-rail-label">Equipe</span>
-    </Link>
-  );
+  useEffect(() => {
+    const storedToken = window.localStorage.getItem("taskboard_token");
+    if (!storedToken) return;
+    setToken(storedToken);
+  }, []);
+
+  useEffect(() => {
+    if (!token) return;
+    let active = true;
+    setLoading(true);
+    taskboardFetch<{ projects: WorkspaceProject[] }>("/api/projects", token)
+      .then((response) => {
+        if (!active) return;
+        setProjects(response.projects);
+        setError("");
+        if (projectId && !response.projects.some((project) => project.id === projectId)) onProjectInvalid?.();
+      })
+      .catch((reason) => {
+        if (!active) return;
+        const message = reason instanceof Error ? reason.message : "Não foi possível carregar os projetos.";
+        if (message.includes("token")) {
+          window.localStorage.removeItem("taskboard_token");
+          router.replace("/login");
+          return;
+        }
+        setError(message);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
+  }, [onProjectInvalid, projectId, router, token]);
+
+  useEffect(() => {
+    if (!open) return;
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    function closeOnOutsideClick(event: MouseEvent) {
+      if (switcherRef.current && !switcherRef.current.contains(event.target as Node)) setOpen(false);
+    }
+    document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+    };
+  }, [open]);
+
+  const currentProject = projects.find((project) => project.id === projectId);
+
+  function selectProject(project: WorkspaceProject) {
+    setOpen(false);
+    if (project.id !== projectId) router.push(`/workspace/${project.id}`);
+  }
 
   return (
-    <nav className={`workspace-rail ${expanded ? "is-expanded" : ""}`} aria-label="Navegação da workspace">
+    <div className="workspace-rail-project" ref={switcherRef}>
+      <button
+        className={`workspace-project-switcher ${open ? "is-open" : ""}`}
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        aria-label={currentProject ? `Projeto atual: ${currentProject.name}` : "Selecionar projeto"}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        data-tooltip={currentProject?.name || "Selecionar projeto"}
+      >
+        <WorkspaceIcon name="folder" />
+        <span className="workspace-project-switcher-copy"><small>Projeto atual</small><strong>{currentProject?.name || "Selecionar projeto"}</strong></span>
+        <WorkspaceIcon name="chevron" />
+      </button>
+      {open ? <div className="workspace-project-switcher-menu" role="listbox" aria-label="Projetos disponíveis">
+        <div className="workspace-project-switcher-heading"><span>Projetos</span><small>{loading ? "Carregando" : projects.length}</small></div>
+        {loading ? <>{[1, 2, 3].map((item) => <div className="workspace-skeleton workspace-project-option-skeleton" key={item} />)}</> : null}
+        {!loading && error ? <p className="workspace-project-switcher-message workspace-project-switcher-error">{error}</p> : null}
+        {!loading && !error && !projects.length ? <p className="workspace-project-switcher-message">Nenhum projeto disponível ainda.</p> : null}
+        {!loading && !error ? projects.map((project) => <button className={`workspace-project-option ${project.id === projectId ? "is-active" : ""}`} role="option" aria-selected={project.id === projectId} type="button" key={project.id} onClick={() => selectProject(project)}>
+          <span><strong>{project.name}</strong><small>{project.task_count} {project.task_count === 1 ? "tarefa" : "tarefas"}</small></span>
+          <WorkspaceIcon name="chevron" />
+        </button>) : null}
+        <Link className="workspace-project-switcher-manage" href="/workspace" onClick={() => setOpen(false)}><WorkspaceIcon name="folder" />Gerenciar projetos</Link>
+      </div> : null}
+    </div>
+  );
+}
+
+export function WorkspaceRail({ mode, projectId, expanded = false, onToggleExpanded, onLogout }: WorkspaceRailProps) {
+  const router = useRouter();
+  const projectInvalid = useCallback(() => router.replace("/workspace?error=project-not-found"), [router]);
+  const hasProjectContext = Boolean(projectId);
+
+  return (
+    <nav className={`workspace-rail ${expanded ? "is-expanded" : ""}`} aria-label="Navegação do workspace">
       <div className="workspace-rail-top">
         <Link className="workspace-rail-brand" href="/" aria-label="Voltar para a RaccoonSoftwares" data-tooltip="RaccoonSoftwares">
           <span className="workspace-rail-brand-mark" aria-hidden="true">🦝</span><span className="workspace-rail-brand-name">RaccoonSoftwares</span>
@@ -178,18 +258,23 @@ export function WorkspaceRail({ mode, projectId, expanded = false, onToggleExpan
         </button> : null}
       </div>
 
+      <ProjectSwitcher projectId={projectId} onProjectInvalid={projectInvalid} />
+
       <div className="workspace-rail-nav">
-        <Link className={`workspace-rail-action ${mode === "workspace" ? "is-active" : ""}`} href="/workspace" aria-label="Abrir quadro" aria-current={mode === "workspace" ? "page" : undefined} data-tooltip="Quadro">
-          <WorkspaceIcon name="board" /><span className="workspace-rail-label">Quadro</span>
-        </Link>
-        {projectsButton}
-        {projectId ? <Link className={`workspace-rail-action ${mode === "prospects" ? "is-active" : ""}`} href={`/workspace/${projectId}/prospects`} aria-label="Abrir prospecção" aria-current={mode === "prospects" ? "page" : undefined} data-tooltip="Prospecção">
-          <WorkspaceIcon name="mapPin" /><span className="workspace-rail-label">Prospecção</span>
-        </Link> : null}
-        <Link className={`workspace-rail-action ${mode === "room" ? "is-active" : ""}`} href={roomHref} aria-label="Abrir sala ao vivo" aria-current={mode === "room" ? "page" : undefined} data-tooltip="Sala ao vivo">
-          <WorkspaceIcon name="screen" /><span className="workspace-rail-label">Sala ao vivo</span>
-        </Link>
-        {teamAction}
+        {hasProjectContext ? <>
+          <Link className={`workspace-rail-action ${mode === "board" ? "is-active" : ""}`} href={`/workspace/${projectId}`} aria-label="Abrir quadro" aria-current={mode === "board" ? "page" : undefined} data-tooltip="Quadro">
+            <WorkspaceIcon name="board" /><span className="workspace-rail-label">Quadro</span>
+          </Link>
+          <Link className={`workspace-rail-action ${mode === "prospects" ? "is-active" : ""}`} href={`/workspace/${projectId}/prospects`} aria-label="Abrir prospecção" aria-current={mode === "prospects" ? "page" : undefined} data-tooltip="Prospecção">
+            <WorkspaceIcon name="mapPin" /><span className="workspace-rail-label">Prospecção</span>
+          </Link>
+          <Link className={`workspace-rail-action ${mode === "room" ? "is-active" : ""}`} href={`/workspace/${projectId}/room`} aria-label="Abrir sala ao vivo" aria-current={mode === "room" ? "page" : undefined} data-tooltip="Sala ao vivo">
+            <WorkspaceIcon name="screen" /><span className="workspace-rail-label">Sala ao vivo</span>
+          </Link>
+          <Link className={`workspace-rail-action ${mode === "team" ? "is-active" : ""}`} href={`/workspace/${projectId}/team`} aria-label="Abrir equipe" aria-current={mode === "team" ? "page" : undefined} data-tooltip="Equipe">
+            <WorkspaceIcon name="users" /><span className="workspace-rail-label">Equipe</span>
+          </Link>
+        </> : null}
       </div>
 
       <div className="workspace-rail-bottom">

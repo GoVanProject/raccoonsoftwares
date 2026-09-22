@@ -25,6 +25,7 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [savedMessage, setSavedMessage] = useState("");
+  const [railExpanded, setRailExpanded] = useState(false);
   const avatarInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -131,11 +132,11 @@ export default function ProfilePage() {
 
   return (
     <main className="workspace-page">
-      <WorkspaceRail mode="profile" onLogout={logout} />
+      <WorkspaceRail mode="profile" expanded={railExpanded} onToggleExpanded={() => setRailExpanded((current) => !current)} onLogout={logout} />
       <section className="profile-shell">
         <header className="profile-heading">
           <div>
-            <Link className="profile-back-link" href="/workspace"><WorkspaceIcon name="back" />Voltar ao quadro</Link>
+            <Link className="profile-back-link" href="/workspace"><WorkspaceIcon name="back" />Voltar aos projetos</Link>
             <span className="workspace-kicker">Sua conta</span>
             <h1>Edite seu perfil.</h1>
             <p>Atualize como você aparece para sua equipe no workspace.</p>
@@ -157,7 +158,7 @@ export default function ProfilePage() {
             <div className="profile-section-heading"><span className="workspace-kicker">Segurança</span><h2>Troque sua senha quando quiser</h2><p>Deixe os campos vazios para manter a senha atual.</p></div>
             <div className="profile-fields"><label>Nova senha<input type="password" autoComplete="new-password" minLength={8} value={newPassword} onChange={(event) => { setNewPassword(event.target.value); setSavedMessage(""); }} placeholder="Pelo menos 8 caracteres" /></label><label>Confirmar nova senha<input type="password" autoComplete="new-password" minLength={8} value={passwordConfirmation} onChange={(event) => { setPasswordConfirmation(event.target.value); setSavedMessage(""); }} placeholder="Digite a senha novamente" /></label></div>
           </section>
-          <div className="profile-form-actions"><Link className="profile-cancel" href="/workspace">Cancelar</Link><button className="profile-save" type="submit" disabled={saving}>{saving ? "Salvando..." : "Salvar alterações"}</button></div>
+          <div className="profile-form-actions"><Link className="profile-cancel" href="/workspace">Voltar aos projetos</Link><button className="profile-save" type="submit" disabled={saving}>{saving ? "Salvando..." : "Salvar alterações"}</button></div>
         </form>}
       </section>
     </main>

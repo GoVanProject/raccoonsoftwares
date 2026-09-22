@@ -336,6 +336,11 @@ export default function RoomPage() {
     setStatus((current) => current === "connected" ? current : "loading");
     setError("");
     try {
+      const projectListResponse = await taskboardFetch<{ projects: Project[] }>("/api/projects", token);
+      if (!projectListResponse.projects.some((item) => item.id === projectId)) {
+        router.replace("/workspace?error=project-not-found");
+        return;
+      }
       const [projectResponse, ticketResponse] = await Promise.all([
         taskboardFetch<{ project: Project }>(`/api/projects/${projectId}`, token),
         taskboardFetch<RoomTicket>(`/api/projects/${projectId}/room/ticket`, token, { method: "POST" }),
@@ -372,6 +377,8 @@ export default function RoomPage() {
       if (message.includes("token")) {
         window.localStorage.removeItem("taskboard_token");
         router.replace("/login");
+      } else if (message.includes("acesso") || message.includes("encontrado")) {
+        router.replace("/workspace?error=project-not-found");
       } else {
         setError(message);
         setStatus("disconnected");
@@ -461,7 +468,7 @@ export default function RoomPage() {
     }
   }
 
-  function leaveRoom(destination = "/workspace") {
+  function leaveRoom(destination = `/workspace/${projectId}`) {
     leavingRef.current = true;
     if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
     void stopSharing();
@@ -519,7 +526,7 @@ export default function RoomPage() {
       <section className="room-shell">
         <div className="room-heading">
           <div>
-            <Link className="room-back-link" href={`/workspace`}>← Voltar ao quadro</Link>
+            <Link className="room-back-link" href={`/workspace/${projectId}`}>← Voltar ao quadro</Link>
             <span className="workspace-kicker">Sala ao vivo</span>
             <h1>{project?.name || "Sala do projeto"}</h1>
             <p>Compartilhe uma tela com a equipe e acompanhe até duas transmissões ao mesmo tempo.</p>
