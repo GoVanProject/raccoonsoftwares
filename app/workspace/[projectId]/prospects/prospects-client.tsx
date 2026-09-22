@@ -3,7 +3,7 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { type DragEvent, type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import seedLeads from "../../../../data/restaurantes.json";
 import { taskboardFetch } from "../../../lib/taskboard";
@@ -125,6 +125,38 @@ function csvCell(value: unknown) {
   return `"${String(value ?? "").replace(/"/g, '""')}"`;
 }
 
+function leadPayload(lead: Lead, status = lead.status) {
+  return {
+    name: lead.name,
+    contact_name: lead.contact_name || "",
+    phone: lead.phone || "",
+    email: lead.email || "",
+    preferred_channel: lead.preferred_channel || "",
+    city: lead.city,
+    state: lead.state,
+    category: lead.category || "",
+    address: lead.address || "",
+    neighborhood: lead.neighborhood || "",
+    rating: lead.rating ?? null,
+    rating_source: lead.rating_source || "",
+    website: lead.website || "",
+    website_label: lead.website_label || "",
+    map_url: lead.map_url || "",
+    notes: lead.notes || "",
+    latitude: lead.latitude ?? null,
+    longitude: lead.longitude ?? null,
+    location_precision: lead.location_precision || "unknown",
+    status,
+    assignee_id: lead.assignee_id || "",
+    next_contact_at: lead.next_contact_at || "",
+    last_contact_at: lead.last_contact_at || "",
+  };
+}
+
+function LeadPagination({ page, totalPages, onPageChange }: { page: number; totalPages: number; onPageChange: (page: number) => void }) {
+  return <nav className="prospects-pagination" aria-label="Paginação de restaurantes"><button type="button" onClick={() => onPageChange(Math.max(1, page - 1))} disabled={page === 1}>Anterior</button><span>Página {page} de {totalPages}</span><button type="button" onClick={() => onPageChange(Math.min(totalPages, page + 1))} disabled={page === totalPages}>Próxima</button></nav>;
+}
+
 export default function ProspectsClient({ projectId }: { projectId: string }) {
   const router = useRouter();
   const [token, setToken] = useState<string | null>(null);
@@ -150,6 +182,9 @@ export default function ProspectsClient({ projectId }: { projectId: string }) {
   const [activityType, setActivityType] = useState<ActivityType>("whatsapp");
   const [activityStatus, setActivityStatus] = useState<Status | "">("");
   const [page, setPage] = useState(1);
+  const [draggedLeadID, setDraggedLeadID] = useState<string | null>(null);
+  const [dragOverStatus, setDragOverStatus] = useState<Status | null>(null);
+  const [movingLeadID, setMovingLeadID] = useState<string | null>(null);
 
   const selectedLead = leads.find((lead) => lead.id === selectedLeadID) || null;
   const readOnly = members.find((member) => member.id === currentUserID)?.role === "viewer";
@@ -281,6 +316,63 @@ export default function ProspectsClient({ projectId }: { projectId: string }) {
     }
   }
 
+  function handleLeadDragStart(event: DragEvent<HTMLElement>, lead: Lead) {
+    if (readOnly) {
+      event.preventDefault();
+      return;
+    }
+    setDraggedLeadID(lead.id);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", lead.id);
+  }
+
+  function handleLeadDragEnd() {
+    setDraggedLeadID(null);
+    setDragOverStatus(null);
+  }
+
+  function handleProspectColumnDragOver(event: DragEvent<HTMLElement>, nextStatus: Status) {
+    if (readOnly || !draggedLeadID) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDragOverStatus(nextStatus);
+  }
+
+  function handleProspectColumnDragLeave(event: DragEvent<HTMLElement>, nextStatus: Status) {
+    const relatedTarget = event.relatedTarget as Node | null;
+    if (relatedTarget && event.currentTarget.contains(relatedTarget)) return;
+    setDragOverStatus((current) => current === nextStatus ? null : current);
+  }
+
+  async function moveLeadToStatus(lead: Lead, nextStatus: Status) {
+    if (!token || readOnly || lead.status === nextStatus) return;
+    const previousStatus = lead.status;
+    setMovingLeadID(lead.id);
+    setLeads((current) => current.map((item) => item.id === lead.id ? { ...item, status: nextStatus } : item));
+    try {
+      const response = await taskboardFetch<{ lead: Lead }>(`/api/leads/${lead.id}`, token, {
+        method: "PATCH",
+        body: JSON.stringify(leadPayload(lead, nextStatus)),
+      });
+      setLeads((current) => current.map((item) => item.id === lead.id ? response.lead : item));
+    } catch (reason) {
+      setLeads((current) => current.map((item) => item.id === lead.id ? { ...item, status: previousStatus } : item));
+      setError(reason instanceof Error ? reason.message : "Não foi possível atualizar o status do lead.");
+    } finally {
+      setMovingLeadID(null);
+    }
+  }
+
+  function handleProspectColumnDrop(event: DragEvent<HTMLElement>, nextStatus: Status) {
+    event.preventDefault();
+    if (readOnly) return;
+    const leadID = event.dataTransfer.getData("text/plain") || draggedLeadID;
+    const lead = leads.find((item) => item.id === leadID);
+    setDraggedLeadID(null);
+    setDragOverStatus(null);
+    if (lead) void moveLeadToStatus(lead, nextStatus);
+  }
+
   async function addActivity(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!token || !selectedLead || !activityBody.trim() || readOnly) return;
@@ -370,8 +462,8 @@ export default function ProspectsClient({ projectId }: { projectId: string }) {
 
           <div className="prospects-view-bar"><div><strong>{filteredLeads.length}</strong> {filteredLeads.length === 1 ? "resultado" : "resultados"}</div><div className="prospects-view-toggle"><button className={view === "map" ? "active" : ""} type="button" onClick={() => setView("map")}><WorkspaceIcon name="mapPin" />Mapa</button><button className={view === "pipeline" ? "active" : ""} type="button" onClick={() => setView("pipeline")}><WorkspaceIcon name="board" />Pipeline</button></div></div>
 
-          {view === "map" ? <div className="prospects-map-layout"><LeadMap leads={visibleLeads} selectedLeadId={selectedLeadID} onSelect={setSelectedLeadID} /><aside className="prospects-list" aria-label="Restaurantes filtrados"><div className="prospects-list-header"><span>Restaurantes</span><small>Selecione um ponto para ver detalhes</small></div>{visibleLeads.map((lead) => <button className={`prospect-row ${selectedLeadID === lead.id ? "active" : ""}`} type="button" key={lead.id} onClick={() => setSelectedLeadID(lead.id)}><span className={`prospect-status-dot ${lead.status}`} /><span className="prospect-row-copy"><strong>{lead.name}</strong><small>{lead.city} · {lead.category || "Sem categoria"}</small></span><span className="prospect-row-arrow">›</span></button>)}{!filteredLeads.length ? <div className="prospects-empty">Nenhum lead corresponde aos filtros.</div> : null}</aside></div> : <div className="prospects-pipeline">{statuses.map((column) => { const columnLeads = visibleLeads.filter((lead) => lead.status === column.value); return <section className="prospects-column" key={column.value}><div className="prospects-column-heading"><span className={`prospect-status-dot ${column.value}`} /><h2>{column.label}</h2><b>{columnLeads.length}</b></div><div className="prospects-column-stack">{columnLeads.map((lead) => <button type="button" className="prospect-pipeline-card" key={lead.id} onClick={() => setSelectedLeadID(lead.id)}><strong>{lead.name}</strong><span>{lead.city} · {lead.category || "Sem categoria"}</span>{lead.next_contact_at ? <small>Retorno em {formatDate(lead.next_contact_at)}</small> : null}</button>)}{!columnLeads.length ? <div className="prospects-column-empty">Nenhum lead</div> : null}</div></section>; })}</div>}
-          {filteredLeads.length > PAGE_SIZE ? <nav className="prospects-pagination" aria-label="Paginação de restaurantes"><button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={currentPage === 1}>Anterior</button><span>Página {currentPage} de {totalPages}</span><button type="button" onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={currentPage === totalPages}>Próxima</button></nav> : null}
+          {view === "map" ? <div className="prospects-map-layout"><LeadMap leads={visibleLeads} selectedLeadId={selectedLeadID} onSelect={setSelectedLeadID} /><aside className="prospects-list" aria-label="Restaurantes filtrados"><div className="prospects-list-header"><span>Restaurantes</span><small>Selecione um ponto para ver detalhes</small></div>{visibleLeads.map((lead) => <button className={`prospect-row ${selectedLeadID === lead.id ? "active" : ""}`} type="button" key={lead.id} onClick={() => setSelectedLeadID(lead.id)}><span className={`prospect-status-dot ${lead.status}`} /><span className="prospect-row-copy"><strong>{lead.name}</strong><small>{lead.city} · {lead.category || "Sem categoria"}</small></span><span className="prospect-row-arrow">›</span></button>)}{!filteredLeads.length ? <div className="prospects-empty">Nenhum lead corresponde aos filtros.</div> : null}{filteredLeads.length > PAGE_SIZE ? <LeadPagination page={currentPage} totalPages={totalPages} onPageChange={setPage} /> : null}</aside></div> : <div className="prospects-pipeline">{statuses.map((column) => { const columnLeads = visibleLeads.filter((lead) => lead.status === column.value); return <section className={`prospects-column ${dragOverStatus === column.value ? "is-drag-over" : ""}`} key={column.value} onDragOver={(event) => handleProspectColumnDragOver(event, column.value)} onDragLeave={(event) => handleProspectColumnDragLeave(event, column.value)} onDrop={(event) => handleProspectColumnDrop(event, column.value)}><div className="prospects-column-heading"><span className={`prospect-status-dot ${column.value}`} /><h2>{column.label}</h2><b>{columnLeads.length}</b></div><div className="prospects-column-stack">{columnLeads.map((lead) => <button type="button" className={`prospect-pipeline-card ${draggedLeadID === lead.id ? "is-dragging" : ""} ${movingLeadID === lead.id ? "is-moving" : ""}`} key={lead.id} draggable={!readOnly} aria-grabbed={draggedLeadID === lead.id} onDragStart={(event) => handleLeadDragStart(event, lead)} onDragEnd={handleLeadDragEnd} onClick={() => setSelectedLeadID(lead.id)}><strong>{lead.name}</strong><span>{lead.city} · {lead.category || "Sem categoria"}</span>{lead.next_contact_at ? <small>Retorno em {formatDate(lead.next_contact_at)}</small> : null}</button>)}{!columnLeads.length ? <div className="prospects-column-empty">Nenhum lead</div> : null}</div></section>; })}</div>}
+          {view === "pipeline" && filteredLeads.length > PAGE_SIZE ? <LeadPagination page={currentPage} totalPages={totalPages} onPageChange={setPage} /> : null}
         </section>
       </div>
       {selectedLead ? <div className="workspace-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setSelectedLeadID(null); }}><section className="workspace-modal prospects-detail-modal" role="dialog" aria-modal="true" aria-labelledby="prospect-detail-title"><div className="workspace-modal-header"><div><span className="workspace-kicker">{statusLabel(selectedLead.status)}</span><h2 id="prospect-detail-title">{selectedLead.name}</h2></div><button className="workspace-panel-close" type="button" onClick={() => setSelectedLeadID(null)} aria-label="Fechar detalhes"><WorkspaceIcon name="close" /></button></div><div className="prospect-detail-content"><div className="prospect-detail-meta"><span>{selectedLead.city} · {selectedLead.state}</span><span>{selectedLead.category || "Categoria não informada"}</span></div><div className="prospect-detail-links">{selectedLead.phone && !["Não localizado", "Não confirmado"].includes(selectedLead.phone) ? <a href={`tel:${selectedLead.phone.replace(/\D/g, "")}`}>{selectedLead.phone}</a> : null}{selectedLead.website ? <a href={selectedLead.website} target="_blank" rel="noreferrer">{selectedLead.website_label || "Website"}</a> : null}{selectedLead.map_url ? <a href={selectedLead.map_url} target="_blank" rel="noreferrer">Abrir no Maps</a> : null}</div><p className="prospect-address">{selectedLead.address || selectedLead.neighborhood || "Localização aproximada pela cidade"}</p><div className="prospect-detail-grid"><div><span>Responsável</span><strong>{selectedLead.assignee_id ? displayMember(members.find((member) => member.id === selectedLead.assignee_id) as Member) : "Sem responsável"}</strong></div><div><span>Próximo contato</span><strong>{formatDate(selectedLead.next_contact_at)}</strong></div><div><span>Último contato</span><strong>{formatDate(selectedLead.last_contact_at)}</strong></div><div><span>Nota pública</span><strong>{selectedLead.rating ? `★ ${selectedLead.rating.toFixed(1).replace(".", ",")}` : "Não informada"}</strong></div></div>{selectedLead.notes ? <div className="prospect-notes"><span>Observações</span><p>{selectedLead.notes}</p></div> : null}<div className="prospect-detail-actions"><button className="edit-cancel-button" type="button" onClick={openEdit} disabled={readOnly}>Editar cadastro</button><button className="edit-cancel-button danger-action" type="button" onClick={() => void deleteSelected()} disabled={readOnly}>Excluir</button></div><div className="prospect-history"><div className="prospect-history-heading"><div><span className="workspace-kicker">Histórico</span><h3>Contatos e notas</h3></div><span>{activities.length}</span></div>{!readOnly ? <form className="prospect-activity-form" onSubmit={addActivity}><div className="prospect-activity-fields"><select value={activityType} onChange={(event) => setActivityType(event.target.value as ActivityType)} aria-label="Tipo de contato">{activityTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select><select value={activityStatus} onChange={(event) => setActivityStatus(event.target.value as Status | "")} aria-label="Atualizar status"><option value="">Manter status</option>{statuses.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div><textarea value={activityBody} onChange={(event) => setActivityBody(event.target.value)} placeholder="O que aconteceu neste contato?" rows={3} required /><button className="workspace-primary-action" type="submit">Registrar contato</button></form> : null}<div className="prospect-activity-list">{activities.map((activity) => <article key={activity.id}><div><strong>{activityTypes.find((item) => item.value === activity.type)?.label || activity.type}</strong><small>{formatDate(activity.created_at)}{activity.status_after ? ` · ${statusLabel(activity.status_after)}` : ""}</small></div><p>{activity.body}</p></article>)}{!activities.length ? <p className="prospect-history-empty">Nenhum contato registrado ainda.</p> : null}</div></div></div></section></div> : null}

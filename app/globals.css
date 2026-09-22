@@ -689,16 +689,20 @@ body:has(.workspace-page)::after {
 .prospect-status-dot.new { background: var(--blue); }.prospect-status-dot.contacted { background: #9865d0; }.prospect-status-dot.no_response { background: var(--orange); }.prospect-status-dot.interested { background: #d58231; }.prospect-status-dot.proposal { background: #b577c9; }.prospect-status-dot.customer { background: var(--success); }.prospect-status-dot.discarded { background: var(--muted-2); }
 .prospects-empty { display: grid; min-height: 180px; place-items: center; padding: 24px; color: var(--muted); font-size: 12px; text-align: center; }
 .prospects-pipeline { display: grid; grid-template-columns: repeat(4, minmax(180px, 1fr)); gap: 12px; align-items: start; overflow-x: auto; padding-bottom: 4px; }
-.prospects-column { min-height: 450px; padding: 13px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--surface-2) 74%, transparent); }
+.prospects-column { min-height: 450px; padding: 13px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--surface-2) 74%, transparent); transition: border-color .35s cubic-bezier(.32, .72, 0, 1), background .35s cubic-bezier(.32, .72, 0, 1), box-shadow .35s cubic-bezier(.32, .72, 0, 1); }
+.prospects-column.is-drag-over { border-color: var(--blue); background: color-mix(in srgb, var(--blue) 7%, var(--surface-2)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 15%, transparent); }
 .prospects-column-heading { display: flex; align-items: center; gap: 7px; margin: 1px 2px 13px; }
 .prospects-column-heading h2 { margin: 0; color: var(--text); font-size: 12px; letter-spacing: -.02em; }
 .prospects-column-heading b { display: grid; min-width: 20px; height: 20px; margin-left: auto; place-items: center; border-radius: 6px; background: var(--surface-3); color: var(--muted); font-size: 10px; }
 .prospects-column-stack { display: grid; gap: 8px; }
 .prospect-pipeline-card { display: grid; gap: 6px; width: 100%; padding: 13px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-solid); color: var(--text); text-align: left; box-shadow: var(--card-shadow); cursor: pointer; transition: border-color .35s cubic-bezier(.32, .72, 0, 1), transform .35s cubic-bezier(.32, .72, 0, 1); }
+.prospect-pipeline-card[draggable="true"] { cursor: grab; user-select: none; }.prospect-pipeline-card[draggable="true"]:active { cursor: grabbing; }
 .prospect-pipeline-card:hover { border-color: var(--blue); transform: translateY(-1px); }
+.prospect-pipeline-card.is-dragging { opacity: .55; transform: rotate(1deg) scale(.98); box-shadow: 0 18px 40px rgba(32, 35, 42, .16); }.prospect-pipeline-card.is-moving { cursor: wait; opacity: .65; }
 .prospect-pipeline-card strong { font-size: 12px; line-height: 1.35; }
 .prospect-pipeline-card span, .prospect-pipeline-card small { color: var(--muted); font-size: 10px; }
 .prospects-column-empty { padding: 27px 8px; border: 1px dashed var(--line-strong); border-radius: 9px; color: var(--muted-2); font-size: 10px; text-align: center; }
+.prospects-column.is-drag-over .prospects-column-empty { border-color: color-mix(in srgb, var(--blue) 65%, var(--line-strong)); background: color-mix(in srgb, var(--blue) 8%, transparent); color: var(--text); }
 .prospects-loading { width: min(960px, calc(100% - 120px)); margin: 0 auto; padding-top: 80px; }
 .prospects-loading-map { width: 100%; height: 520px; margin-top: 22px; border-radius: 17px; }
 .prospects-detail-modal { width: min(640px, calc(100vw - 32px)); max-height: min(840px, calc(100vh - 32px)); overflow: auto; }
