@@ -660,6 +660,12 @@ body:has(.workspace-page)::after {
 .prospects-view-toggle button.active { background: var(--surface-solid); color: var(--text); box-shadow: 0 2px 8px rgba(32, 35, 42, .08); }
 .prospects-view-toggle button:hover { color: var(--text); }
 .prospects-view-toggle .workspace-icon { width: 15px; height: 15px; }
+.prospects-pagination { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 14px; }
+.prospects-pagination button { min-height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-solid); color: var(--text); font-size: 11px; font-weight: 750; cursor: pointer; transition: border-color .35s cubic-bezier(.32, .72, 0, 1), background .35s cubic-bezier(.32, .72, 0, 1), transform .35s cubic-bezier(.32, .72, 0, 1); }
+.prospects-pagination button:hover:not(:disabled), .prospects-pagination button:focus-visible { border-color: var(--blue); background: var(--surface-2); }
+.prospects-pagination button:active:not(:disabled) { transform: translateY(1px) scale(.98); }
+.prospects-pagination button:disabled { cursor: not-allowed; opacity: .45; }
+.prospects-pagination span { min-width: 110px; color: var(--muted); font-size: 11px; text-align: center; }
 .prospects-map-layout { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(310px, .75fr); min-height: 620px; overflow: hidden; border: 1px solid var(--line); border-radius: 17px; background: var(--surface-solid); box-shadow: var(--card-shadow); }
 .prospects-map-frame { position: relative; min-height: 620px; }
 .prospects-map { height: 620px; z-index: 1; background: #dfe7ec; }
