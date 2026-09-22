@@ -61,10 +61,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/projects/{projectID}/room/ws", s.roomWebSocket)
 	mux.HandleFunc("GET /api/projects/{projectID}/tasks", s.requireAuth(s.listTasks))
 	mux.HandleFunc("POST /api/projects/{projectID}/tasks", s.requireAuth(s.createTask))
+	mux.HandleFunc("GET /api/projects/{projectID}/leads", s.requireAuth(s.listLeads))
+	mux.HandleFunc("POST /api/projects/{projectID}/leads", s.requireAuth(s.createLead))
+	mux.HandleFunc("POST /api/projects/{projectID}/leads/import", s.requireAuth(s.importLeads))
 
 	mux.HandleFunc("GET /api/tasks/{taskID}", s.requireAuth(s.getTask))
 	mux.HandleFunc("PATCH /api/tasks/{taskID}", s.requireAuth(s.updateTask))
 	mux.HandleFunc("DELETE /api/tasks/{taskID}", s.requireAuth(s.deleteTask))
+	mux.HandleFunc("GET /api/leads/{leadID}", s.requireAuth(s.getLead))
+	mux.HandleFunc("PATCH /api/leads/{leadID}", s.requireAuth(s.updateLead))
+	mux.HandleFunc("DELETE /api/leads/{leadID}", s.requireAuth(s.deleteLead))
+	mux.HandleFunc("GET /api/leads/{leadID}/activities", s.requireAuth(s.listLeadActivities))
+	mux.HandleFunc("POST /api/leads/{leadID}/activities", s.requireAuth(s.createLeadActivity))
 
 	return s.cors(mux)
 }
@@ -571,6 +579,173 @@ func (s *Server) deleteTask(w http.ResponseWriter, r *http.Request, userID strin
 	w.WriteHeader(http.StatusNoContent)
 }
 
+type leadImportRequest struct {
+	Leads []store.LeadImport `json:"leads"`
+}
+
+func (s *Server) listLeads(w http.ResponseWriter, r *http.Request, userID string) {
+	project, err := s.store.ProjectByID(r.PathValue("projectID"))
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if !projectAccessible(project, userID) {
+		writeError(w, http.StatusForbidden, "você não tem acesso a este projeto")
+		return
+	}
+	query := r.URL.Query()
+	leads := s.store.ListLeads(project.ID, store.LeadFilters{
+		Search: query.Get("search"), City: query.Get("city"), Category: query.Get("category"),
+		Status: query.Get("status"), AssigneeID: query.Get("assignee_id"),
+	})
+	sort.Slice(leads, func(i, j int) bool {
+		if leads[i].City == leads[j].City {
+			return strings.ToLower(leads[i].Name) < strings.ToLower(leads[j].Name)
+		}
+		return strings.ToLower(leads[i].City) < strings.ToLower(leads[j].City)
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"leads": leads})
+}
+
+func (s *Server) createLead(w http.ResponseWriter, r *http.Request, userID string) {
+	var lead store.Lead
+	if !readJSON(w, r, &lead) {
+		return
+	}
+	if lead.Status == "" {
+		lead.Status = store.LeadStatusNew
+	}
+	if err := validateLead(lead); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	created, err := s.store.CreateLead(r.PathValue("projectID"), userID, lead)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"lead": created})
+}
+
+func (s *Server) importLeads(w http.ResponseWriter, r *http.Request, userID string) {
+	var request leadImportRequest
+	if !readJSON(w, r, &request) {
+		return
+	}
+	if len(request.Leads) == 0 || len(request.Leads) > 5000 {
+		writeError(w, http.StatusBadRequest, "envie entre 1 e 5000 leads")
+		return
+	}
+	created, skipped, err := s.store.ImportLeads(r.PathValue("projectID"), userID, request.Leads)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"leads": created, "created": len(created), "skipped": skipped})
+}
+
+func (s *Server) getLead(w http.ResponseWriter, r *http.Request, userID string) {
+	lead, err := s.store.LeadByID(r.PathValue("leadID"))
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	project, err := s.store.ProjectByID(lead.ProjectID)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if !projectAccessible(project, userID) {
+		writeError(w, http.StatusForbidden, "você não tem acesso a este lead")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"lead": lead})
+}
+
+func (s *Server) updateLead(w http.ResponseWriter, r *http.Request, userID string) {
+	current, err := s.store.LeadByID(r.PathValue("leadID"))
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	var lead store.Lead
+	if !readJSON(w, r, &lead) {
+		return
+	}
+	lead.ID = current.ID
+	lead.ProjectID = current.ProjectID
+	lead.SourceKey = current.SourceKey
+	lead.CreatedBy = current.CreatedBy
+	lead.CreatedAt = current.CreatedAt
+	if lead.Status == "" {
+		lead.Status = current.Status
+	}
+	if err := validateLead(lead); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	updated, err := s.store.UpdateLead(current.ID, userID, lead)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"lead": updated})
+}
+
+func (s *Server) deleteLead(w http.ResponseWriter, r *http.Request, userID string) {
+	if err := s.store.DeleteLead(r.PathValue("leadID"), userID); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) listLeadActivities(w http.ResponseWriter, r *http.Request, userID string) {
+	lead, err := s.store.LeadByID(r.PathValue("leadID"))
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	project, err := s.store.ProjectByID(lead.ProjectID)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if !projectAccessible(project, userID) {
+		writeError(w, http.StatusForbidden, "você não tem acesso a este lead")
+		return
+	}
+	activities, err := s.store.ListLeadActivities(lead.ID)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"activities": activities})
+}
+
+func (s *Server) createLeadActivity(w http.ResponseWriter, r *http.Request, userID string) {
+	lead, err := s.store.LeadByID(r.PathValue("leadID"))
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	var activity store.LeadActivity
+	if !readJSON(w, r, &activity) {
+		return
+	}
+	activity.LeadID = lead.ID
+	if err := validateLeadActivity(activity); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	created, err := s.store.CreateLeadActivity(lead.ID, userID, activity)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"activity": created})
+}
+
 func (s *Server) requireAuth(next func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		header := strings.TrimSpace(r.Header.Get("Authorization"))
@@ -716,6 +891,57 @@ func validateTask(title, description, status, priority, dueDate string) error {
 		if _, err := time.Parse("2006-01-02", dueDate); err != nil {
 			return errors.New("due_date deve estar no formato YYYY-MM-DD")
 		}
+	}
+	return nil
+}
+
+func validateLead(lead store.Lead) error {
+	if strings.TrimSpace(lead.Name) == "" || len(lead.Name) > 200 {
+		return errors.New("o nome do restaurante é obrigatório e deve ter até 200 caracteres")
+	}
+	if strings.TrimSpace(lead.City) == "" || len(lead.City) > 120 {
+		return errors.New("a cidade é obrigatória e deve ter até 120 caracteres")
+	}
+	if len(lead.State) > 2 || len(lead.Category) > 120 || len(lead.Address) > 300 || len(lead.Neighborhood) > 120 {
+		return errors.New("os dados de localização ou categoria são inválidos")
+	}
+	if len(lead.Notes) > 10000 || len(lead.ContactName) > 160 || len(lead.Phone) > 80 || len(lead.Email) > 254 {
+		return errors.New("os dados de contato ou observações excedem o limite permitido")
+	}
+	if lead.Email != "" {
+		if _, err := validateEmail(lead.Email); err != nil {
+			return errors.New("email do contato inválido")
+		}
+	}
+	if lead.Status == "" {
+		lead.Status = store.LeadStatusNew
+	}
+	if !oneOf(lead.Status, store.LeadStatusNew, store.LeadStatusContacted, store.LeadStatusNoResponse, store.LeadStatusInterested, store.LeadStatusProposal, store.LeadStatusCustomer, store.LeadStatusDiscarded) {
+		return errors.New("status do lead inválido")
+	}
+	if lead.PreferredChannel != "" && !oneOf(lead.PreferredChannel, store.LeadActivityWhatsApp, store.LeadActivityPhone, store.LeadActivityEmail, "instagram", "other") {
+		return errors.New("canal preferido inválido")
+	}
+	if lead.NextContactAt != "" {
+		if _, err := time.Parse("2006-01-02", lead.NextContactAt); err != nil {
+			return errors.New("next_contact_at deve estar no formato YYYY-MM-DD")
+		}
+	}
+	if lead.LocationPrecision != "" && !oneOf(lead.LocationPrecision, "address", "neighborhood", "city", "unknown") {
+		return errors.New("precisão da localização inválida")
+	}
+	return nil
+}
+
+func validateLeadActivity(activity store.LeadActivity) error {
+	if !oneOf(activity.Type, store.LeadActivityWhatsApp, store.LeadActivityPhone, store.LeadActivityEmail, store.LeadActivityMeeting, store.LeadActivityNote) {
+		return errors.New("tipo de atividade inválido")
+	}
+	if strings.TrimSpace(activity.Body) == "" || len(activity.Body) > 5000 {
+		return errors.New("a atividade precisa ter uma descrição de até 5000 caracteres")
+	}
+	if activity.StatusAfter != "" && !oneOf(activity.StatusAfter, store.LeadStatusNew, store.LeadStatusContacted, store.LeadStatusNoResponse, store.LeadStatusInterested, store.LeadStatusProposal, store.LeadStatusCustomer, store.LeadStatusDiscarded) {
+		return errors.New("status posterior inválido")
 	}
 	return nil
 }

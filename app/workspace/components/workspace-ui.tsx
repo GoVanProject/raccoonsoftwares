@@ -11,6 +11,7 @@ export type WorkspaceIconName =
   | "fullscreen"
   | "exitFullscreen"
   | "logout"
+  | "mapPin"
   | "menu"
   | "mic"
   | "micOff"
@@ -31,7 +32,7 @@ type AvatarMember = {
 };
 
 type WorkspaceRailProps = {
-  mode: "workspace" | "room" | "profile";
+  mode: "workspace" | "prospects" | "room" | "profile";
   projectId?: string;
   expanded?: boolean;
   onToggleExpanded?: () => void;
@@ -58,6 +59,7 @@ export function WorkspaceIcon({ name }: { name: WorkspaceIconName }) {
     fullscreen: <><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M21 16v5h-5" /></>,
     exitFullscreen: <><path d="M9 3v6H3M15 3v6h6M9 21v-6H3M15 21v-6h6" /></>,
     logout: <><path d="M10 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5" /><path d="M14 8l4 4-4 4M18 12H8" /></>,
+    mapPin: <><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></>,
     menu: <><path d="M4 7h16M4 12h16M4 17h16" /></>,
     mic: <><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7" /></>,
     micOff: <><path d="m4 4 16 16" /><path d="M9 9v5a3 3 0 0 0 5.2 2.05M15 9V6a3 3 0 0 0-5.2-2.05" /><path d="M5.5 11a6.5 6.5 0 0 0 9.2 5.9M12 17.5V21M8.5 21h7" /></>,
@@ -181,6 +183,9 @@ export function WorkspaceRail({ mode, projectId, expanded = false, onToggleExpan
           <WorkspaceIcon name="board" /><span className="workspace-rail-label">Quadro</span>
         </Link>
         {projectsButton}
+        {projectId ? <Link className={`workspace-rail-action ${mode === "prospects" ? "is-active" : ""}`} href={`/workspace/${projectId}/prospects`} aria-label="Abrir prospecção" aria-current={mode === "prospects" ? "page" : undefined} data-tooltip="Prospecção">
+          <WorkspaceIcon name="mapPin" /><span className="workspace-rail-label">Prospecção</span>
+        </Link> : null}
         <Link className={`workspace-rail-action ${mode === "room" ? "is-active" : ""}`} href={roomHref} aria-label="Abrir sala ao vivo" aria-current={mode === "room" ? "page" : undefined} data-tooltip="Sala ao vivo">
           <WorkspaceIcon name="screen" /><span className="workspace-rail-label">Sala ao vivo</span>
         </Link>

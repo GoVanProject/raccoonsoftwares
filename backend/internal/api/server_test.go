@@ -91,6 +91,46 @@ func TestKanbanFlow(t *testing.T) {
 	call(t, handler, http.MethodDelete, "/api/projects/"+projectID, member["token"].(string), nil, http.StatusForbidden)
 }
 
+func TestLeadPipelineFlow(t *testing.T) {
+	database, err := store.New(t.TempDir() + "/taskboard.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(database, auth.NewTokenService([]byte(strings.Repeat("s", 32)), time.Hour), Config{CORSOrigin: "http://localhost:3000"})
+	handler := server.Handler()
+	owner := call(t, handler, http.MethodPost, "/api/auth/register", "", map[string]any{"email": "lead-owner@example.com", "password": "senha-owner"}, http.StatusCreated)
+	viewer := call(t, handler, http.MethodPost, "/api/auth/register", "", map[string]any{"email": "lead-viewer@example.com", "password": "senha-viewer"}, http.StatusCreated)
+	viewerID := viewer["user"].(map[string]any)["id"].(string)
+	project := call(t, handler, http.MethodPost, "/api/projects", owner["token"].(string), map[string]any{"name": "Prospecção"}, http.StatusCreated)
+	projectID := project["project"].(map[string]any)["id"].(string)
+	call(t, handler, http.MethodPost, "/api/projects/"+projectID+"/members", owner["token"].(string), map[string]any{"user_id": viewerID}, http.StatusOK)
+	call(t, handler, http.MethodPatch, "/api/projects/"+projectID+"/members/"+viewerID, owner["token"].(string), map[string]any{"role": "viewer"}, http.StatusOK)
+
+	created := call(t, handler, http.MethodPost, "/api/projects/"+projectID+"/leads", owner["token"].(string), map[string]any{
+		"source_key": "santo|burger-12", "name": "Burger 12", "city": "Santo Antônio do Monte", "state": "MG",
+		"category": "Hamburgueria", "phone": "(37) 99957-1856", "status": "new", "latitude": -20.9463, "longitude": -45.293,
+		"location_precision": "city",
+	}, http.StatusCreated)
+	leadID := created["lead"].(map[string]any)["id"].(string)
+	call(t, handler, http.MethodPost, "/api/projects/"+projectID+"/leads/import", owner["token"].(string), map[string]any{"leads": []map[string]any{
+		{"source_key": "santo|burger-12", "name": "Burger 12", "city": "Santo Antônio do Monte"},
+		{"source_key": "vitoria|nakaya", "name": "Nakaya", "city": "Vitória da Conquista", "state": "BA"},
+	}}, http.StatusCreated)
+	listed := call(t, handler, http.MethodGet, "/api/projects/"+projectID+"/leads?city=Vitória+da+Conquista", owner["token"].(string), nil, http.StatusOK)
+	if len(listed["leads"].([]any)) != 1 {
+		t.Fatalf("esperava um lead filtrado: %#v", listed)
+	}
+	activity := call(t, handler, http.MethodPost, "/api/leads/"+leadID+"/activities", owner["token"].(string), map[string]any{"type": "whatsapp", "body": "Apresentei a solução.", "status_after": "contacted"}, http.StatusCreated)
+	if activity["activity"].(map[string]any)["status_after"] != "contacted" {
+		t.Fatalf("atividade não atualizou o status: %#v", activity)
+	}
+	updated := call(t, handler, http.MethodGet, "/api/leads/"+leadID, owner["token"].(string), nil, http.StatusOK)
+	if updated["lead"].(map[string]any)["status"] != "contacted" {
+		t.Fatalf("lead não refletiu o status da atividade: %#v", updated)
+	}
+	call(t, handler, http.MethodPost, "/api/projects/"+projectID+"/leads", viewer["token"].(string), map[string]any{"name": "Somente leitura", "city": "João Pessoa"}, http.StatusForbidden)
+}
+
 func TestRegisterProfile(t *testing.T) {
 	database, err := store.New(t.TempDir() + "/taskboard.json")
 	if err != nil {

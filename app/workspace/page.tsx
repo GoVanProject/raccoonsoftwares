@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, type DragEvent, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -76,6 +76,9 @@ export default function WorkspacePage() {
   const [editTaskAssignee, setEditTaskAssignee] = useState("");
   const [taskModal, setTaskModal] = useState<"create" | "view" | "edit" | null>(null);
   const [viewingTask, setViewingTask] = useState<Task | null>(null);
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+  const [dragOverStatus, setDragOverStatus] = useState<Status | null>(null);
+  const [movingTaskId, setMovingTaskId] = useState<string | null>(null);
 
   useEffect(() => {
     const storedToken = window.localStorage.getItem("taskboard_token");
@@ -293,6 +296,60 @@ export default function WorkspacePage() {
     } catch (reason) { handleError(reason); }
   }
 
+  function handleTaskDragStart(event: DragEvent<HTMLElement>, task: Task) {
+    if (isReadOnly) {
+      event.preventDefault();
+      return;
+    }
+    setDraggedTaskId(task.id);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", task.id);
+  }
+
+  function handleTaskDragEnd() {
+    setDraggedTaskId(null);
+    setDragOverStatus(null);
+  }
+
+  function handleColumnDragOver(event: DragEvent<HTMLElement>, status: Status) {
+    if (isReadOnly || !draggedTaskId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDragOverStatus(status);
+  }
+
+  function handleColumnDragLeave(event: DragEvent<HTMLElement>, status: Status) {
+    const relatedTarget = event.relatedTarget as Node | null;
+    if (relatedTarget && event.currentTarget.contains(relatedTarget)) return;
+    setDragOverStatus((current) => current === status ? null : current);
+  }
+
+  async function moveTaskToStatus(task: Task, status: Status) {
+    if (!token || isReadOnly || task.status === status) return;
+    const previousStatus = task.status;
+    setMovingTaskId(task.id);
+    setTasks((current) => current.map((item) => item.id === task.id ? { ...item, status } : item));
+    try {
+      const response = await taskboardFetch<{ task: Task }>(`/api/tasks/${task.id}`, token, { method: "PATCH", body: JSON.stringify({ status }) });
+      setTasks((current) => current.map((item) => item.id === task.id ? response.task : item));
+    } catch (reason) {
+      setTasks((current) => current.map((item) => item.id === task.id ? { ...item, status: previousStatus } : item));
+      handleError(reason);
+    } finally {
+      setMovingTaskId(null);
+    }
+  }
+
+  function handleColumnDrop(event: DragEvent<HTMLElement>, status: Status) {
+    event.preventDefault();
+    if (isReadOnly) return;
+    const taskId = event.dataTransfer.getData("text/plain") || draggedTaskId;
+    const task = tasks.find((item) => item.id === taskId);
+    setDraggedTaskId(null);
+    setDragOverStatus(null);
+    if (task) void moveTaskToStatus(task, status);
+  }
+
   function startTaskEdit(task: Task) {
     setEditingTaskId(task.id);
     setEditTaskTitle(task.title);
@@ -485,14 +542,14 @@ export default function WorkspacePage() {
               <div className="member-stack"><WorkspaceAvatarStack members={members} label={`${members.length} integrante${members.length === 1 ? "" : "s"} no projeto`} /><b>{members.length} {members.length === 1 ? "integrante" : "integrantes"}</b></div>
             </div>
             <div className="workspace-toolbar">
-              <div className="workspace-toolbar-copy"><span className="workspace-kicker">Quadro de tarefas</span><strong>{tasks.length} {tasks.length === 1 ? "tarefa" : "tarefas"} no projeto</strong><span>Organize o trabalho da equipe por etapa.</span></div>
+              <div className="workspace-toolbar-copy"><span className="workspace-kicker">Quadro de tarefas</span><strong>{tasks.length} {tasks.length === 1 ? "tarefa" : "tarefas"} no projeto</strong><span>Organize o trabalho da equipe por etapa. Arraste as tarefas para mover.</span></div>
               <div className="workspace-toolbar-actions"><button className="workspace-primary-action" type="button" onClick={openTaskCreate} disabled={isReadOnly} title={isReadOnly ? "Seu acesso permite apenas visualização" : "Adicionar nova tarefa"}><WorkspaceIcon name="plus" />Nova tarefa</button><button className="workspace-secondary-action" type="button" onClick={openTeamView}><WorkspaceIcon name="users" />Equipe</button></div>
             </div>
             <div className="kanban-grid">
-              {columns.map((column) => <section className="kanban-column" key={column.status}>
+              {columns.map((column) => <section className={`kanban-column ${dragOverStatus === column.status ? "is-drag-over" : ""}`} key={column.status} onDragOver={(event) => handleColumnDragOver(event, column.status)} onDragLeave={(event) => handleColumnDragLeave(event, column.status)} onDrop={(event) => handleColumnDrop(event, column.status)}>
                 <div className="column-heading"><span className={`column-dot ${column.tone}`} /><h2>{column.label}</h2><b>{groupedTasks[column.status].length}</b></div>
                 <div className="task-stack">
-                  {groupedTasks[column.status].map((task) => <article className="kanban-card" key={task.id} tabIndex={0} role="button" aria-label={`Visualizar tarefa ${task.title}`} onClick={() => openTaskView(task)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openTaskView(task); } }}>
+                  {groupedTasks[column.status].map((task) => <article className={`kanban-card ${draggedTaskId === task.id ? "is-dragging" : ""} ${movingTaskId === task.id ? "is-moving" : ""}`} key={task.id} tabIndex={0} role="button" draggable={!isReadOnly} aria-grabbed={draggedTaskId === task.id} aria-label={`Visualizar tarefa ${task.title}${isReadOnly ? "" : ". Arraste para mover de etapa"}`} onDragStart={(event) => handleTaskDragStart(event, task)} onDragEnd={handleTaskDragEnd} onClick={() => openTaskView(task)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openTaskView(task); } }}>
                     <div className="task-card-top"><span className={`priority ${task.priority}`}>{task.priority === "high" ? "Alta" : task.priority === "low" ? "Baixa" : "Média"}</span><div className="task-card-actions" onClick={(event) => event.stopPropagation()}><select value={task.status} onChange={(event) => void updateTask(task, { status: event.target.value as Status })} aria-label={`Status de ${task.title}`} disabled={isReadOnly}><option value="backlog">Backlog</option><option value="todo">A fazer</option><option value="in_progress">Em andamento</option><option value="done">Concluído</option></select><button className="task-edit-trigger" type="button" onClick={() => startTaskEdit(task)} disabled={isReadOnly}>Editar</button></div></div>
                     <h3>{task.title}</h3>{task.description ? <MarkdownPreview value={task.description} /> : <p className="task-card-placeholder">Sem descrição adicionada.</p>}
                     <div className="task-card-footer" onClick={(event) => event.stopPropagation()}><select value={task.assignee_id || ""} onChange={(event) => void updateTask(task, { assignee_id: event.target.value })} aria-label={`Responsável por ${task.title}`} disabled={isReadOnly}><option value="">Sem responsável</option>{members.map((member) => <option value={member.id} key={member.id}>{member.alias || member.email}</option>)}</select><span>{task.assignee_id ? (members.find((member) => member.id === task.assignee_id)?.alias || members.find((member) => member.id === task.assignee_id)?.email)?.slice(0, 1).toUpperCase() || "?" : "·"}</span></div>

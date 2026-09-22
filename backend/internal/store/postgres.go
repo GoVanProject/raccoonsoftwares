@@ -98,6 +98,52 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 CREATE INDEX IF NOT EXISTS tasks_project_id_idx ON tasks (project_id);
 CREATE INDEX IF NOT EXISTS project_members_user_id_idx ON project_members (user_id);
+
+CREATE TABLE IF NOT EXISTS restaurant_leads (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    source_key TEXT NOT NULL DEFAULT '',
+    name TEXT NOT NULL,
+    contact_name TEXT NOT NULL DEFAULT '',
+    phone TEXT NOT NULL DEFAULT '',
+    email TEXT NOT NULL DEFAULT '',
+    preferred_channel TEXT NOT NULL DEFAULT '',
+    city TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL DEFAULT '',
+    address TEXT NOT NULL DEFAULT '',
+    neighborhood TEXT NOT NULL DEFAULT '',
+    rating DOUBLE PRECISION,
+    rating_source TEXT NOT NULL DEFAULT '',
+    website TEXT NOT NULL DEFAULT '',
+    website_label TEXT NOT NULL DEFAULT '',
+    map_url TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    latitude DOUBLE PRECISION,
+    longitude DOUBLE PRECISION,
+    location_precision TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'new',
+    assignee_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    next_contact_at TEXT NOT NULL DEFAULT '',
+    last_contact_at TEXT NOT NULL DEFAULT '',
+    created_by TEXT NOT NULL REFERENCES users(id),
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS restaurant_leads_project_id_idx ON restaurant_leads (project_id);
+CREATE INDEX IF NOT EXISTS restaurant_leads_status_idx ON restaurant_leads (project_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS restaurant_leads_source_key_idx ON restaurant_leads (project_id, source_key) WHERE source_key <> '';
+
+CREATE TABLE IF NOT EXISTS lead_activities (
+    id TEXT PRIMARY KEY,
+    lead_id TEXT NOT NULL REFERENCES restaurant_leads(id) ON DELETE CASCADE,
+    author_id TEXT NOT NULL REFERENCES users(id),
+    type TEXT NOT NULL,
+    body TEXT NOT NULL DEFAULT '',
+    status_after TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS lead_activities_lead_id_idx ON lead_activities (lead_id, created_at);
 `)
 	return err
 }
@@ -131,6 +177,37 @@ func scanTask(row rowScanner) (Task, error) {
 		return Task{}, translatePostgresError(err)
 	}
 	return task, nil
+}
+
+func scanLead(row rowScanner) (Lead, error) {
+	var lead Lead
+	var rating, latitude, longitude float64
+	if err := row.Scan(
+		&lead.ID, &lead.ProjectID, &lead.SourceKey, &lead.Name, &lead.ContactName, &lead.Phone,
+		&lead.Email, &lead.PreferredChannel, &lead.City, &lead.State, &lead.Category,
+		&lead.Address, &lead.Neighborhood, &rating, &lead.RatingSource, &lead.Website,
+		&lead.WebsiteLabel, &lead.MapURL, &lead.Notes, &latitude, &longitude,
+		&lead.LocationPrecision, &lead.Status, &lead.AssigneeID, &lead.NextContactAt,
+		&lead.LastContactAt, &lead.CreatedBy, &lead.CreatedAt, &lead.UpdatedAt,
+	); err != nil {
+		return Lead{}, translatePostgresError(err)
+	}
+	if rating > 0 {
+		lead.Rating = &rating
+	}
+	if latitude != 0 || longitude != 0 {
+		lead.Latitude = &latitude
+		lead.Longitude = &longitude
+	}
+	return lead, nil
+}
+
+func scanLeadActivity(row rowScanner) (LeadActivity, error) {
+	var activity LeadActivity
+	if err := row.Scan(&activity.ID, &activity.LeadID, &activity.AuthorID, &activity.Type, &activity.Body, &activity.StatusAfter, &activity.CreatedAt); err != nil {
+		return LeadActivity{}, translatePostgresError(err)
+	}
+	return activity, nil
 }
 
 func translatePostgresError(err error) error {
@@ -447,6 +524,281 @@ func nullableString(value string) any {
 		return nil
 	}
 	return value
+}
+
+func nullableFloat(value *float64) any {
+	if value == nil {
+		return nil
+	}
+	return *value
+}
+
+func leadSelectQuery() string {
+	return `
+SELECT id, project_id, source_key, name, contact_name, phone, email, preferred_channel,
+       city, state, category, address, neighborhood, COALESCE(rating, 0), rating_source,
+       website, website_label, map_url, notes, COALESCE(latitude, 0), COALESCE(longitude, 0),
+       location_precision, status, COALESCE(assignee_id, ''), next_contact_at, last_contact_at,
+       created_by, created_at, updated_at
+FROM restaurant_leads`
+}
+
+func leadInsertQuery() string {
+	return `
+INSERT INTO restaurant_leads (
+    id, project_id, source_key, name, contact_name, phone, email, preferred_channel,
+    city, state, category, address, neighborhood, rating, rating_source, website,
+    website_label, map_url, notes, latitude, longitude, location_precision, status,
+    assignee_id, next_contact_at, last_contact_at, created_by, created_at, updated_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+          $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
+RETURNING id, project_id, source_key, name, contact_name, phone, email, preferred_channel,
+          city, state, category, address, neighborhood, COALESCE(rating, 0), rating_source,
+          website, website_label, map_url, notes, COALESCE(latitude, 0), COALESCE(longitude, 0),
+          location_precision, status, COALESCE(assignee_id, ''), next_contact_at, last_contact_at,
+		  created_by, created_at, updated_at`
+}
+
+func leadInsertQueryWithConflictHandling() string {
+	return strings.Replace(leadInsertQuery(), "RETURNING", "ON CONFLICT DO NOTHING RETURNING", 1)
+}
+
+func leadInsertArgs(lead Lead, id, projectID, creatorID string, now time.Time) []any {
+	status := lead.Status
+	if status == "" {
+		status = LeadStatusNew
+	}
+	return []any{
+		id, projectID, lead.SourceKey, lead.Name, lead.ContactName, lead.Phone, lead.Email,
+		lead.PreferredChannel, lead.City, lead.State, lead.Category, lead.Address, lead.Neighborhood,
+		nullableFloat(lead.Rating), lead.RatingSource, lead.Website, lead.WebsiteLabel, lead.MapURL,
+		lead.Notes, nullableFloat(lead.Latitude), nullableFloat(lead.Longitude), lead.LocationPrecision,
+		status, nullableString(lead.AssigneeID), lead.NextContactAt, lead.LastContactAt,
+		creatorID, now, now,
+	}
+}
+
+func (s *PostgresStore) ListLeads(projectID string, filters LeadFilters) []Lead {
+	rows, err := s.pool.Query(context.Background(), leadSelectQuery()+`
+WHERE project_id = $1
+  AND ($2 = '' OR CONCAT_WS(' ', name, contact_name, phone, email, city, state, category, address, neighborhood, notes) ILIKE '%' || $2 || '%')
+  AND ($3 = '' OR city = $3)
+  AND ($4 = '' OR category = $4)
+  AND ($5 = '' OR status = $5)
+  AND ($6 = '' OR COALESCE(assignee_id, '') = $6)
+ORDER BY city, name`, projectID, strings.TrimSpace(filters.Search), strings.TrimSpace(filters.City), strings.TrimSpace(filters.Category), strings.TrimSpace(filters.Status), strings.TrimSpace(filters.AssigneeID))
+	if err != nil {
+		return []Lead{}
+	}
+	defer rows.Close()
+	leads := make([]Lead, 0)
+	for rows.Next() {
+		lead, scanErr := scanLead(rows)
+		if scanErr == nil {
+			leads = append(leads, lead)
+		}
+	}
+	return leads
+}
+
+func (s *PostgresStore) CreateLead(projectID, creatorID string, lead Lead) (Lead, error) {
+	if _, err := s.projectOwner(projectID); err != nil {
+		return Lead{}, err
+	}
+	if !s.projectMemberExists(projectID, creatorID) {
+		return Lead{}, ErrNotMember
+	}
+	role, err := s.projectMemberRole(projectID, creatorID)
+	if err != nil {
+		return Lead{}, err
+	}
+	if role == MemberRoleViewer {
+		return Lead{}, ErrReadOnly
+	}
+	if lead.AssigneeID != "" && !s.projectMemberExists(projectID, lead.AssigneeID) {
+		return Lead{}, ErrNotMember
+	}
+	now := time.Now().UTC()
+	return scanLead(s.pool.QueryRow(context.Background(), leadInsertQuery(), leadInsertArgs(lead, newID(), projectID, creatorID, now)...))
+}
+
+func (s *PostgresStore) ImportLeads(projectID, creatorID string, imports []LeadImport) (created []Lead, skipped int, err error) {
+	if _, err := s.projectOwner(projectID); err != nil {
+		return nil, 0, err
+	}
+	if !s.projectMemberExists(projectID, creatorID) {
+		return nil, 0, ErrNotMember
+	}
+	role, err := s.projectMemberRole(projectID, creatorID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if role == MemberRoleViewer {
+		return nil, 0, ErrReadOnly
+	}
+	ctx := context.Background()
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, 0, fmt.Errorf("iniciar importação de leads: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	created = make([]Lead, 0, len(imports))
+	for _, item := range imports {
+		if strings.TrimSpace(item.Name) == "" || strings.TrimSpace(item.City) == "" {
+			return nil, 0, ErrInvalid
+		}
+		lead := Lead{
+			SourceKey: item.SourceKey, Name: item.Name, ContactName: item.ContactName, Phone: item.Phone,
+			Email: item.Email, PreferredChannel: item.PreferredChannel, City: item.City, State: item.State,
+			Category: item.Category, Address: item.Address, Neighborhood: item.Neighborhood, Rating: item.Rating,
+			RatingSource: item.RatingSource, Website: item.Website, WebsiteLabel: item.WebsiteLabel,
+			MapURL: item.MapURL, Notes: item.Notes, Latitude: item.Latitude, Longitude: item.Longitude,
+			LocationPrecision: item.LocationPrecision,
+		}
+		if lead.SourceKey == "" {
+			lead.SourceKey = leadDedupeKey(lead.Name, lead.City, lead.Address)
+		}
+		now := time.Now().UTC()
+		row := tx.QueryRow(ctx, leadInsertQueryWithConflictHandling(), leadInsertArgs(lead, newID(), projectID, creatorID, now)...)
+		inserted, scanErr := scanLead(row)
+		if errors.Is(scanErr, pgx.ErrNoRows) {
+			skipped++
+			continue
+		}
+		if scanErr != nil {
+			return nil, 0, scanErr
+		}
+		created = append(created, inserted)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, 0, fmt.Errorf("confirmar importação de leads: %w", err)
+	}
+	return created, skipped, nil
+}
+
+func (s *PostgresStore) LeadByID(id string) (Lead, error) {
+	return scanLead(s.pool.QueryRow(context.Background(), leadSelectQuery()+` WHERE id = $1`, id))
+}
+
+func (s *PostgresStore) UpdateLead(id, actorID string, lead Lead) (Lead, error) {
+	var projectID, sourceKey string
+	if err := s.pool.QueryRow(context.Background(), `SELECT project_id, source_key FROM restaurant_leads WHERE id = $1`, id).Scan(&projectID, &sourceKey); err != nil {
+		return Lead{}, translatePostgresError(err)
+	}
+	if !s.projectMemberExists(projectID, actorID) {
+		return Lead{}, ErrNotMember
+	}
+	role, err := s.projectMemberRole(projectID, actorID)
+	if err != nil {
+		return Lead{}, err
+	}
+	if role == MemberRoleViewer {
+		return Lead{}, ErrReadOnly
+	}
+	if lead.AssigneeID != "" && !s.projectMemberExists(projectID, lead.AssigneeID) {
+		return Lead{}, ErrNotMember
+	}
+	lead.SourceKey = sourceKey
+	query := `
+UPDATE restaurant_leads
+SET name = $2, contact_name = $3, phone = $4, email = $5, preferred_channel = $6,
+    city = $7, state = $8, category = $9, address = $10, neighborhood = $11, rating = $12,
+    rating_source = $13, website = $14, website_label = $15, map_url = $16, notes = $17,
+    latitude = $18, longitude = $19, location_precision = $20, status = $21, assignee_id = $22,
+    next_contact_at = $23, last_contact_at = $24, updated_at = $25
+WHERE id = $1
+RETURNING id, project_id, source_key, name, contact_name, phone, email, preferred_channel,
+          city, state, category, address, neighborhood, COALESCE(rating, 0), rating_source,
+          website, website_label, map_url, notes, COALESCE(latitude, 0), COALESCE(longitude, 0),
+          location_precision, status, COALESCE(assignee_id, ''), next_contact_at, last_contact_at,
+          created_by, created_at, updated_at`
+	return scanLead(s.pool.QueryRow(context.Background(), query, id, lead.Name, lead.ContactName, lead.Phone, lead.Email, lead.PreferredChannel, lead.City, lead.State, lead.Category, lead.Address, lead.Neighborhood, nullableFloat(lead.Rating), lead.RatingSource, lead.Website, lead.WebsiteLabel, lead.MapURL, lead.Notes, nullableFloat(lead.Latitude), nullableFloat(lead.Longitude), lead.LocationPrecision, lead.Status, nullableString(lead.AssigneeID), lead.NextContactAt, lead.LastContactAt, time.Now().UTC()))
+}
+
+func (s *PostgresStore) DeleteLead(id, actorID string) error {
+	var projectID string
+	if err := s.pool.QueryRow(context.Background(), `SELECT project_id FROM restaurant_leads WHERE id = $1`, id).Scan(&projectID); err != nil {
+		return translatePostgresError(err)
+	}
+	if !s.projectMemberExists(projectID, actorID) {
+		return ErrNotMember
+	}
+	role, err := s.projectMemberRole(projectID, actorID)
+	if err != nil {
+		return err
+	}
+	if role == MemberRoleViewer {
+		return ErrReadOnly
+	}
+	_, err = s.pool.Exec(context.Background(), `DELETE FROM restaurant_leads WHERE id = $1`, id)
+	return translatePostgresError(err)
+}
+
+func (s *PostgresStore) ListLeadActivities(leadID string) ([]LeadActivity, error) {
+	if _, err := s.LeadByID(leadID); err != nil {
+		return nil, err
+	}
+	rows, err := s.pool.Query(context.Background(), `
+SELECT id, lead_id, author_id, type, body, status_after, created_at
+FROM lead_activities WHERE lead_id = $1 ORDER BY created_at DESC`, leadID)
+	if err != nil {
+		return nil, translatePostgresError(err)
+	}
+	defer rows.Close()
+	activities := make([]LeadActivity, 0)
+	for rows.Next() {
+		activity, scanErr := scanLeadActivity(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		activities = append(activities, activity)
+	}
+	return activities, translatePostgresError(rows.Err())
+}
+
+func (s *PostgresStore) CreateLeadActivity(leadID, authorID string, activity LeadActivity) (LeadActivity, error) {
+	lead, err := s.LeadByID(leadID)
+	if err != nil {
+		return LeadActivity{}, err
+	}
+	if !s.projectMemberExists(lead.ProjectID, authorID) {
+		return LeadActivity{}, ErrNotMember
+	}
+	role, err := s.projectMemberRole(lead.ProjectID, authorID)
+	if err != nil {
+		return LeadActivity{}, err
+	}
+	if role == MemberRoleViewer {
+		return LeadActivity{}, ErrReadOnly
+	}
+	now := time.Now().UTC()
+	ctx := context.Background()
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return LeadActivity{}, fmt.Errorf("iniciar registro de atividade: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	created, createdErr := scanLeadActivity(tx.QueryRow(ctx, `
+INSERT INTO lead_activities (id, lead_id, author_id, type, body, status_after, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, lead_id, author_id, type, body, status_after, created_at`, newID(), leadID, authorID, activity.Type, activity.Body, activity.StatusAfter, now))
+	if createdErr != nil {
+		return LeadActivity{}, createdErr
+	}
+	if activity.StatusAfter != "" {
+		if _, err := tx.Exec(ctx, `UPDATE restaurant_leads SET status = $2, updated_at = $3 WHERE id = $1`, leadID, activity.StatusAfter, now); err != nil {
+			return LeadActivity{}, translatePostgresError(err)
+		}
+	}
+	if activity.Type != LeadActivityNote {
+		if _, err := tx.Exec(ctx, `UPDATE restaurant_leads SET last_contact_at = $2, updated_at = $2 WHERE id = $1`, leadID, now.Format(time.RFC3339)); err != nil {
+			return LeadActivity{}, translatePostgresError(err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return LeadActivity{}, fmt.Errorf("confirmar registro de atividade: %w", err)
+	}
+	return created, nil
 }
 
 func taskSelectQuery() string {

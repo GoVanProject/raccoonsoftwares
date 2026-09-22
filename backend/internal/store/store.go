@@ -68,10 +68,100 @@ type Task struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+const (
+	LeadStatusNew        = "new"
+	LeadStatusContacted  = "contacted"
+	LeadStatusNoResponse = "no_response"
+	LeadStatusInterested = "interested"
+	LeadStatusProposal   = "proposal"
+	LeadStatusCustomer   = "customer"
+	LeadStatusDiscarded  = "discarded"
+	LeadActivityWhatsApp = "whatsapp"
+	LeadActivityPhone    = "phone"
+	LeadActivityEmail    = "email"
+	LeadActivityMeeting  = "meeting"
+	LeadActivityNote     = "note"
+)
+
+type Lead struct {
+	ID                string    `json:"id"`
+	ProjectID         string    `json:"project_id"`
+	SourceKey         string    `json:"source_key,omitempty"`
+	Name              string    `json:"name"`
+	ContactName       string    `json:"contact_name,omitempty"`
+	Phone             string    `json:"phone,omitempty"`
+	Email             string    `json:"email,omitempty"`
+	PreferredChannel  string    `json:"preferred_channel,omitempty"`
+	City              string    `json:"city"`
+	State             string    `json:"state"`
+	Category          string    `json:"category,omitempty"`
+	Address           string    `json:"address,omitempty"`
+	Neighborhood      string    `json:"neighborhood,omitempty"`
+	Rating            *float64  `json:"rating,omitempty"`
+	RatingSource      string    `json:"rating_source,omitempty"`
+	Website           string    `json:"website,omitempty"`
+	WebsiteLabel      string    `json:"website_label,omitempty"`
+	MapURL            string    `json:"map_url,omitempty"`
+	Notes             string    `json:"notes,omitempty"`
+	Latitude          *float64  `json:"latitude,omitempty"`
+	Longitude         *float64  `json:"longitude,omitempty"`
+	LocationPrecision string    `json:"location_precision,omitempty"`
+	Status            string    `json:"status"`
+	AssigneeID        string    `json:"assignee_id,omitempty"`
+	NextContactAt     string    `json:"next_contact_at,omitempty"`
+	LastContactAt     string    `json:"last_contact_at,omitempty"`
+	CreatedBy         string    `json:"created_by"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+type LeadActivity struct {
+	ID          string    `json:"id"`
+	LeadID      string    `json:"lead_id"`
+	AuthorID    string    `json:"author_id"`
+	Type        string    `json:"type"`
+	Body        string    `json:"body"`
+	StatusAfter string    `json:"status_after,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+type LeadFilters struct {
+	Search     string
+	City       string
+	Category   string
+	Status     string
+	AssigneeID string
+}
+
+type LeadImport struct {
+	SourceKey         string   `json:"source_key"`
+	Name              string   `json:"name"`
+	ContactName       string   `json:"contact_name"`
+	Phone             string   `json:"phone"`
+	Email             string   `json:"email"`
+	PreferredChannel  string   `json:"preferred_channel"`
+	City              string   `json:"city"`
+	State             string   `json:"state"`
+	Category          string   `json:"category"`
+	Address           string   `json:"address"`
+	Neighborhood      string   `json:"neighborhood"`
+	Rating            *float64 `json:"rating"`
+	RatingSource      string   `json:"rating_source"`
+	Website           string   `json:"website"`
+	WebsiteLabel      string   `json:"website_label"`
+	MapURL            string   `json:"map_url"`
+	Notes             string   `json:"notes"`
+	Latitude          *float64 `json:"latitude"`
+	Longitude         *float64 `json:"longitude"`
+	LocationPrecision string   `json:"location_precision"`
+}
+
 type data struct {
-	Users    map[string]User    `json:"users"`
-	Projects map[string]Project `json:"projects"`
-	Tasks    map[string]Task    `json:"tasks"`
+	Users          map[string]User         `json:"users"`
+	Projects       map[string]Project      `json:"projects"`
+	Tasks          map[string]Task         `json:"tasks"`
+	Leads          map[string]Lead         `json:"leads"`
+	LeadActivities map[string]LeadActivity `json:"lead_activities"`
 }
 
 type Store struct {
@@ -103,6 +193,14 @@ type Repository interface {
 	TaskByID(id string) (Task, error)
 	UpdateTask(id, actorID, title, description, status, priority, assigneeID, dueDate string) (Task, error)
 	DeleteTask(id, actorID string) error
+	ListLeads(projectID string, filters LeadFilters) []Lead
+	CreateLead(projectID, creatorID string, lead Lead) (Lead, error)
+	ImportLeads(projectID, creatorID string, leads []LeadImport) (created []Lead, skipped int, err error)
+	LeadByID(id string) (Lead, error)
+	UpdateLead(id, actorID string, lead Lead) (Lead, error)
+	DeleteLead(id, actorID string) error
+	ListLeadActivities(leadID string) ([]LeadActivity, error)
+	CreateLeadActivity(leadID, authorID string, activity LeadActivity) (LeadActivity, error)
 }
 
 func New(path string) (*Store, error) {
@@ -110,9 +208,11 @@ func New(path string) (*Store, error) {
 		return nil, errors.New("caminho do armazenamento vazio")
 	}
 	s := &Store{path: path, data: data{
-		Users:    make(map[string]User),
-		Projects: make(map[string]Project),
-		Tasks:    make(map[string]Task),
+		Users:          make(map[string]User),
+		Projects:       make(map[string]Project),
+		Tasks:          make(map[string]Task),
+		Leads:          make(map[string]Lead),
+		LeadActivities: make(map[string]LeadActivity),
 	}}
 	contents, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -132,6 +232,12 @@ func New(path string) (*Store, error) {
 	}
 	if s.data.Tasks == nil {
 		s.data.Tasks = make(map[string]Task)
+	}
+	if s.data.Leads == nil {
+		s.data.Leads = make(map[string]Lead)
+	}
+	if s.data.LeadActivities == nil {
+		s.data.LeadActivities = make(map[string]LeadActivity)
 	}
 	return s, nil
 }
@@ -517,6 +623,269 @@ func (s *Store) DeleteTask(id, actorID string) error {
 	}
 	delete(s.data.Tasks, id)
 	return s.persistLocked()
+}
+
+func (s *Store) ListLeads(projectID string, filters LeadFilters) []Lead {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	search := strings.ToLower(strings.TrimSpace(filters.Search))
+	leads := make([]Lead, 0)
+	for _, lead := range s.data.Leads {
+		if lead.ProjectID != projectID {
+			continue
+		}
+		haystack := strings.ToLower(strings.Join([]string{lead.Name, lead.ContactName, lead.Phone, lead.Email, lead.City, lead.State, lead.Category, lead.Address, lead.Neighborhood, lead.Notes}, " "))
+		if search != "" && !strings.Contains(haystack, search) {
+			continue
+		}
+		if filters.City != "" && lead.City != filters.City {
+			continue
+		}
+		if filters.Category != "" && lead.Category != filters.Category {
+			continue
+		}
+		if filters.Status != "" && lead.Status != filters.Status {
+			continue
+		}
+		if filters.AssigneeID != "" && lead.AssigneeID != filters.AssigneeID {
+			continue
+		}
+		leads = append(leads, lead)
+	}
+	return leads
+}
+
+func (s *Store) CreateLead(projectID, creatorID string, lead Lead) (Lead, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	project, ok := s.data.Projects[projectID]
+	if !ok {
+		return Lead{}, ErrNotFound
+	}
+	if !contains(project.MemberIDs, creatorID) {
+		return Lead{}, ErrNotMember
+	}
+	if memberRole(project, creatorID) == MemberRoleViewer {
+		return Lead{}, ErrReadOnly
+	}
+	if lead.AssigneeID != "" && !contains(project.MemberIDs, lead.AssigneeID) {
+		return Lead{}, ErrNotMember
+	}
+	if lead.SourceKey != "" && s.leadExistsBySourceKey(projectID, lead.SourceKey) {
+		return Lead{}, ErrConflict
+	}
+	now := time.Now().UTC()
+	lead.ID = newID()
+	lead.ProjectID = projectID
+	lead.CreatedBy = creatorID
+	lead.CreatedAt = now
+	lead.UpdatedAt = now
+	if lead.Status == "" {
+		lead.Status = LeadStatusNew
+	}
+	s.data.Leads[lead.ID] = lead
+	return lead, s.persistLocked()
+}
+
+func (s *Store) ImportLeads(projectID, creatorID string, imports []LeadImport) (created []Lead, skipped int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	project, ok := s.data.Projects[projectID]
+	if !ok {
+		return nil, 0, ErrNotFound
+	}
+	if !contains(project.MemberIDs, creatorID) {
+		return nil, 0, ErrNotMember
+	}
+	if memberRole(project, creatorID) == MemberRoleViewer {
+		return nil, 0, ErrReadOnly
+	}
+	now := time.Now().UTC()
+	created = make([]Lead, 0, len(imports))
+	for _, item := range imports {
+		if strings.TrimSpace(item.Name) == "" || strings.TrimSpace(item.City) == "" {
+			return nil, 0, ErrInvalid
+		}
+		sourceKey := strings.TrimSpace(item.SourceKey)
+		if sourceKey == "" {
+			sourceKey = leadDedupeKey(item.Name, item.City, item.Address)
+		}
+		if s.leadExistsBySourceKey(projectID, sourceKey) {
+			skipped++
+			continue
+		}
+		lead := Lead{
+			ID:                newID(),
+			ProjectID:         projectID,
+			SourceKey:         sourceKey,
+			Name:              strings.TrimSpace(item.Name),
+			ContactName:       strings.TrimSpace(item.ContactName),
+			Phone:             strings.TrimSpace(item.Phone),
+			Email:             strings.TrimSpace(item.Email),
+			PreferredChannel:  strings.TrimSpace(item.PreferredChannel),
+			City:              strings.TrimSpace(item.City),
+			State:             strings.TrimSpace(item.State),
+			Category:          strings.TrimSpace(item.Category),
+			Address:           strings.TrimSpace(item.Address),
+			Neighborhood:      strings.TrimSpace(item.Neighborhood),
+			Rating:            item.Rating,
+			RatingSource:      strings.TrimSpace(item.RatingSource),
+			Website:           strings.TrimSpace(item.Website),
+			WebsiteLabel:      strings.TrimSpace(item.WebsiteLabel),
+			MapURL:            strings.TrimSpace(item.MapURL),
+			Notes:             strings.TrimSpace(item.Notes),
+			Latitude:          item.Latitude,
+			Longitude:         item.Longitude,
+			LocationPrecision: strings.TrimSpace(item.LocationPrecision),
+			Status:            LeadStatusNew,
+			CreatedBy:         creatorID,
+			CreatedAt:         now,
+			UpdatedAt:         now,
+		}
+		if lead.AssigneeID != "" && !contains(project.MemberIDs, lead.AssigneeID) {
+			return nil, 0, ErrNotMember
+		}
+		s.data.Leads[lead.ID] = lead
+		created = append(created, lead)
+	}
+	if err := s.persistLocked(); err != nil {
+		return nil, 0, err
+	}
+	return created, skipped, nil
+}
+
+func (s *Store) LeadByID(id string) (Lead, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	lead, ok := s.data.Leads[id]
+	if !ok {
+		return Lead{}, ErrNotFound
+	}
+	return lead, nil
+}
+
+func (s *Store) UpdateLead(id, actorID string, lead Lead) (Lead, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, ok := s.data.Leads[id]
+	if !ok {
+		return Lead{}, ErrNotFound
+	}
+	project, ok := s.data.Projects[current.ProjectID]
+	if !ok {
+		return Lead{}, ErrNotFound
+	}
+	if !contains(project.MemberIDs, actorID) {
+		return Lead{}, ErrNotMember
+	}
+	if memberRole(project, actorID) == MemberRoleViewer {
+		return Lead{}, ErrReadOnly
+	}
+	if lead.AssigneeID != "" && !contains(project.MemberIDs, lead.AssigneeID) {
+		return Lead{}, ErrNotMember
+	}
+	if lead.SourceKey != "" && lead.SourceKey != current.SourceKey && s.leadExistsBySourceKey(project.ID, lead.SourceKey) {
+		return Lead{}, ErrConflict
+	}
+	lead.ID = current.ID
+	lead.ProjectID = current.ProjectID
+	lead.SourceKey = current.SourceKey
+	lead.CreatedBy = current.CreatedBy
+	lead.CreatedAt = current.CreatedAt
+	lead.UpdatedAt = time.Now().UTC()
+	s.data.Leads[id] = lead
+	return lead, s.persistLocked()
+}
+
+func (s *Store) DeleteLead(id, actorID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	lead, ok := s.data.Leads[id]
+	if !ok {
+		return ErrNotFound
+	}
+	project, ok := s.data.Projects[lead.ProjectID]
+	if !ok {
+		return ErrNotFound
+	}
+	if !contains(project.MemberIDs, actorID) {
+		return ErrNotMember
+	}
+	if memberRole(project, actorID) == MemberRoleViewer {
+		return ErrReadOnly
+	}
+	delete(s.data.Leads, id)
+	for activityID, activity := range s.data.LeadActivities {
+		if activity.LeadID == id {
+			delete(s.data.LeadActivities, activityID)
+		}
+	}
+	return s.persistLocked()
+}
+
+func (s *Store) ListLeadActivities(leadID string) ([]LeadActivity, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if _, ok := s.data.Leads[leadID]; !ok {
+		return nil, ErrNotFound
+	}
+	activities := make([]LeadActivity, 0)
+	for _, activity := range s.data.LeadActivities {
+		if activity.LeadID == leadID {
+			activities = append(activities, activity)
+		}
+	}
+	return activities, nil
+}
+
+func (s *Store) CreateLeadActivity(leadID, authorID string, activity LeadActivity) (LeadActivity, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	lead, ok := s.data.Leads[leadID]
+	if !ok {
+		return LeadActivity{}, ErrNotFound
+	}
+	project, ok := s.data.Projects[lead.ProjectID]
+	if !ok {
+		return LeadActivity{}, ErrNotFound
+	}
+	if !contains(project.MemberIDs, authorID) {
+		return LeadActivity{}, ErrNotMember
+	}
+	if memberRole(project, authorID) == MemberRoleViewer {
+		return LeadActivity{}, ErrReadOnly
+	}
+	now := time.Now().UTC()
+	activity.ID = newID()
+	activity.LeadID = leadID
+	activity.AuthorID = authorID
+	activity.CreatedAt = now
+	s.data.LeadActivities[activity.ID] = activity
+	if activity.StatusAfter != "" {
+		lead.Status = activity.StatusAfter
+	}
+	if activity.Type != LeadActivityNote {
+		lead.LastContactAt = now.Format(time.RFC3339)
+	}
+	lead.UpdatedAt = now
+	s.data.Leads[lead.ID] = lead
+	if err := s.persistLocked(); err != nil {
+		return LeadActivity{}, err
+	}
+	return activity, nil
+}
+
+func (s *Store) leadExistsBySourceKey(projectID, sourceKey string) bool {
+	for _, lead := range s.data.Leads {
+		if lead.ProjectID == projectID && lead.SourceKey == sourceKey {
+			return true
+		}
+	}
+	return false
+}
+
+func leadDedupeKey(name, city, address string) string {
+	return strings.ToLower(strings.Join([]string{strings.TrimSpace(name), strings.TrimSpace(city), strings.TrimSpace(address)}, "|"))
 }
 
 func (s *Store) HasProjectAccess(projectID, userID string) bool {

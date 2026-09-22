@@ -622,6 +622,126 @@ body:has(.workspace-page)::after {
   .profile-cancel, .profile-save { flex: 1; }
 }
 
+/* Restaurant prospecting workspace */
+.prospects-main {
+  width: min(1440px, calc(100% - var(--workspace-rail-width) - 64px));
+  margin: 0 auto;
+  transform: translateX(calc(var(--workspace-rail-width) / 2));
+  padding: 42px 0 64px;
+}
+.prospects-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 28px;
+  margin-bottom: 28px;
+}
+.prospects-heading h1 { max-width: 680px; margin: 7px 0 8px; font-size: clamp(34px, 4vw, 54px); letter-spacing: -.05em; line-height: 1; text-wrap: balance; }
+.prospects-heading p { max-width: 620px; margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; text-wrap: pretty; }
+.prospects-back { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; font-weight: 750; }
+.prospects-back:hover { color: var(--text); }
+.prospects-back .workspace-icon { width: 15px; height: 15px; }
+.prospects-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.prospects-actions button { min-height: 38px; }
+.prospects-notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; padding: 10px 13px; border: 1px solid color-mix(in srgb, var(--success) 24%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--success) 8%, transparent); color: var(--success); font-size: 12px; }
+.prospects-notice button { padding: 0; border: 0; background: transparent; color: inherit; font-size: 18px; line-height: 1; cursor: pointer; }
+.prospects-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin-bottom: 20px; overflow: hidden; border: 1px solid var(--line); border-radius: 15px; background: var(--line); box-shadow: var(--card-shadow); }
+.prospects-metrics > div { min-height: 88px; padding: 17px 18px; background: var(--surface-solid); }
+.prospects-metrics strong { display: block; margin-bottom: 4px; font-size: 25px; letter-spacing: -.04em; }
+.prospects-metrics span { color: var(--muted); font-size: 11px; }
+.prospects-filters { display: grid; grid-template-columns: minmax(220px, 2fr) repeat(3, minmax(140px, 1fr)); gap: 10px; margin-bottom: 17px; }
+.prospects-filters label { display: grid; gap: 6px; color: var(--muted); font-size: 10px; font-weight: 750; }
+.prospects-filters input, .prospects-filters select { width: 100%; min-height: 42px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; outline: 0; background: var(--surface-solid); color: var(--text); font: inherit; font-size: 12px; }
+.prospects-filters input:focus, .prospects-filters select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 14%, transparent); }
+.prospects-view-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; color: var(--muted); font-size: 11px; }
+.prospects-view-bar strong { color: var(--text); }
+.prospects-view-toggle { display: inline-flex; gap: 3px; padding: 3px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+.prospects-view-toggle button { display: inline-flex; min-height: 31px; align-items: center; gap: 6px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font: inherit; font-size: 11px; font-weight: 750; cursor: pointer; }
+.prospects-view-toggle button.active { background: var(--surface-solid); color: var(--text); box-shadow: 0 2px 8px rgba(32, 35, 42, .08); }
+.prospects-view-toggle button:hover { color: var(--text); }
+.prospects-view-toggle .workspace-icon { width: 15px; height: 15px; }
+.prospects-map-layout { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(310px, .75fr); min-height: 620px; overflow: hidden; border: 1px solid var(--line); border-radius: 17px; background: var(--surface-solid); box-shadow: var(--card-shadow); }
+.prospects-map-frame { position: relative; min-height: 620px; }
+.prospects-map { height: 620px; z-index: 1; background: #dfe7ec; }
+.prospects-map-legend { position: absolute; right: 12px; bottom: 12px; z-index: 400; display: flex; gap: 10px; padding: 8px 10px; border: 1px solid rgba(255, 255, 255, .7); border-radius: 8px; background: rgba(255, 255, 255, .92); box-shadow: 0 5px 16px rgba(32, 35, 42, .12); color: #445267; font-size: 9px; }
+.prospects-map-legend span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.legend-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; }.legend-dot.exact { background: #2463eb; }.legend-dot.approximate { background: #8997aa; }
+.prospects-map-loading { min-height: 620px; background: var(--surface-3); }
+.prospects-map .leaflet-control-zoom a { color: var(--text); }
+.prospects-list { display: flex; min-width: 0; flex-direction: column; overflow: hidden; border-left: 1px solid var(--line); background: var(--surface-solid); }
+.prospects-list-header { display: grid; gap: 3px; padding: 18px 17px 14px; border-bottom: 1px solid var(--line); }
+.prospects-list-header span { color: var(--text); font-size: 13px; font-weight: 800; }
+.prospects-list-header small { color: var(--muted); font-size: 10px; }
+.prospect-row { display: flex; width: 100%; align-items: center; gap: 9px; min-height: 65px; padding: 10px 14px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--text); text-align: left; cursor: pointer; transition: background .35s cubic-bezier(.32, .72, 0, 1), transform .35s cubic-bezier(.32, .72, 0, 1); }
+.prospect-row:hover, .prospect-row.active { background: color-mix(in srgb, var(--blue) 7%, var(--surface-solid)); }
+.prospect-row:active { transform: translateY(1px); }
+.prospect-row-copy { display: grid; min-width: 0; flex: 1; gap: 3px; }
+.prospect-row-copy strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.prospect-row-copy small { overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.prospect-row-arrow { color: var(--muted-2); font-size: 20px; line-height: 1; }
+.prospect-status-dot { display: inline-block; width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: var(--muted-2); }
+.prospect-status-dot.new { background: var(--blue); }.prospect-status-dot.contacted { background: #9865d0; }.prospect-status-dot.no_response { background: var(--orange); }.prospect-status-dot.interested { background: #d58231; }.prospect-status-dot.proposal { background: #b577c9; }.prospect-status-dot.customer { background: var(--success); }.prospect-status-dot.discarded { background: var(--muted-2); }
+.prospects-empty { display: grid; min-height: 180px; place-items: center; padding: 24px; color: var(--muted); font-size: 12px; text-align: center; }
+.prospects-pipeline { display: grid; grid-template-columns: repeat(4, minmax(180px, 1fr)); gap: 12px; align-items: start; overflow-x: auto; padding-bottom: 4px; }
+.prospects-column { min-height: 450px; padding: 13px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--surface-2) 74%, transparent); }
+.prospects-column-heading { display: flex; align-items: center; gap: 7px; margin: 1px 2px 13px; }
+.prospects-column-heading h2 { margin: 0; color: var(--text); font-size: 12px; letter-spacing: -.02em; }
+.prospects-column-heading b { display: grid; min-width: 20px; height: 20px; margin-left: auto; place-items: center; border-radius: 6px; background: var(--surface-3); color: var(--muted); font-size: 10px; }
+.prospects-column-stack { display: grid; gap: 8px; }
+.prospect-pipeline-card { display: grid; gap: 6px; width: 100%; padding: 13px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-solid); color: var(--text); text-align: left; box-shadow: var(--card-shadow); cursor: pointer; transition: border-color .35s cubic-bezier(.32, .72, 0, 1), transform .35s cubic-bezier(.32, .72, 0, 1); }
+.prospect-pipeline-card:hover { border-color: var(--blue); transform: translateY(-1px); }
+.prospect-pipeline-card strong { font-size: 12px; line-height: 1.35; }
+.prospect-pipeline-card span, .prospect-pipeline-card small { color: var(--muted); font-size: 10px; }
+.prospects-column-empty { padding: 27px 8px; border: 1px dashed var(--line-strong); border-radius: 9px; color: var(--muted-2); font-size: 10px; text-align: center; }
+.prospects-loading { width: min(960px, calc(100% - 120px)); margin: 0 auto; padding-top: 80px; }
+.prospects-loading-map { width: 100%; height: 520px; margin-top: 22px; border-radius: 17px; }
+.prospects-detail-modal { width: min(640px, calc(100vw - 32px)); max-height: min(840px, calc(100vh - 32px)); overflow: auto; }
+.prospect-detail-content { padding: 0 24px 24px; }
+.prospect-detail-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 11px; color: var(--muted); font-size: 11px; }
+.prospect-detail-meta span + span::before { margin-right: 6px; content: "·"; color: var(--muted-2); }
+.prospect-detail-links { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.prospect-detail-links a { padding: 5px 8px; border-radius: 6px; background: var(--surface-2); color: var(--blue); font-size: 10px; font-weight: 750; }
+.prospect-address { margin: 0 0 17px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.prospect-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 17px; }
+.prospect-detail-grid > div { display: grid; gap: 4px; padding: 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-2); }
+.prospect-detail-grid span, .prospect-notes > span { color: var(--muted); font-size: 10px; }
+.prospect-detail-grid strong { font-size: 11px; line-height: 1.35; }
+.prospect-notes { margin-bottom: 17px; }
+.prospect-notes p { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
+.prospect-detail-actions { display: flex; gap: 8px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+.danger-action { color: var(--red) !important; }
+.prospect-history { padding-top: 19px; }
+.prospect-history-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 13px; }
+.prospect-history-heading h3 { margin: 3px 0 0; font-size: 17px; letter-spacing: -.03em; }
+.prospect-history-heading > span { display: grid; min-width: 24px; height: 24px; place-items: center; border-radius: 7px; background: var(--surface-2); color: var(--muted); font-size: 10px; font-weight: 750; }
+.prospect-activity-form { display: grid; gap: 8px; margin-bottom: 17px; }
+.prospect-activity-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.prospect-activity-form select, .prospect-activity-form textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; outline: 0; background: var(--surface-2); color: var(--text); font: inherit; font-size: 11px; }
+.prospect-activity-form select { min-height: 37px; padding: 0 8px; }
+.prospect-activity-form textarea:focus, .prospect-activity-form select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 14%, transparent); }
+.prospect-activity-form button { justify-self: start; min-height: 35px; }
+.prospect-activity-list { display: grid; gap: 8px; }
+.prospect-activity-list article { padding: 10px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-2); }
+.prospect-activity-list article > div { display: flex; justify-content: space-between; gap: 8px; }
+.prospect-activity-list strong { font-size: 10px; }.prospect-activity-list small { color: var(--muted); font-size: 9px; }.prospect-activity-list p { margin: 7px 0 0; color: var(--muted); font-size: 11px; line-height: 1.45; white-space: pre-wrap; }
+.prospect-history-empty { margin: 0; color: var(--muted); font-size: 11px; }
+.prospect-form-modal { width: min(780px, calc(100vw - 32px)); max-height: min(840px, calc(100vh - 32px)); overflow: auto; }
+.prospect-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.prospect-form-grid label { display: grid; gap: 6px; color: var(--muted); font-size: 10px; font-weight: 750; }
+.prospect-form-grid input, .prospect-form-grid select, .prospect-form-grid textarea { width: 100%; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; outline: 0; background: var(--surface-2); color: var(--text); font: inherit; font-size: 12px; }
+.prospect-form-grid input, .prospect-form-grid select { min-height: 39px; }.prospect-form-grid textarea { padding-top: 9px; resize: vertical; line-height: 1.45; }.prospect-form-grid input:focus, .prospect-form-grid select:focus, .prospect-form-grid textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 14%, transparent); }
+.prospect-form-wide { grid-column: 1 / -1; }
+
+@media (max-width: 980px) {
+  .prospects-map-layout { grid-template-columns: 1fr; }.prospects-map-frame, .prospects-map { min-height: 480px; height: 480px; }.prospects-list { max-height: 360px; border-top: 1px solid var(--line); border-left: 0; }.prospects-pipeline { grid-template-columns: repeat(4, minmax(215px, 1fr)); }
+}
+@media (max-width: 720px) {
+  .prospects-main { width: calc(100% - var(--workspace-rail-width) - 32px); padding-top: 28px; }.prospects-heading { display: block; }.prospects-actions { justify-content: flex-start; margin-top: 18px; }.prospects-metrics { grid-template-columns: repeat(2, 1fr); }.prospects-filters { grid-template-columns: 1fr 1fr; }.prospects-search { grid-column: 1 / -1; }.prospects-map-layout { min-height: 0; }.prospects-map-frame, .prospects-map { min-height: 390px; height: 390px; }.prospects-heading h1 { font-size: 36px; }.prospects-detail-content { padding: 0 16px 18px; }
+}
+@media (max-width: 520px) {
+  .prospects-main { width: calc(100% - var(--workspace-rail-width) - 24px); }.prospects-actions button { flex: 1; }.prospects-filters { grid-template-columns: 1fr; }.prospects-search { grid-column: auto; }.prospect-form-grid { grid-template-columns: 1fr; }.prospect-form-wide { grid-column: auto; }.prospect-detail-grid { grid-template-columns: 1fr; }.prospect-activity-fields { grid-template-columns: 1fr; }.prospects-view-bar { align-items: flex-start; flex-direction: column; }.prospects-view-toggle { width: 100%; }.prospects-view-toggle button { flex: 1; justify-content: center; }
+}
+
 .workspace-project-panel {
   position: fixed;
   inset: 0 auto 0 var(--workspace-rail-width);
@@ -1484,6 +1604,42 @@ body:has(.workspace-page)::after {
 
 .kanban-card {
   cursor: pointer;
+}
+
+.kanban-column {
+  transition: border-color .35s cubic-bezier(.32, .72, 0, 1), background .35s cubic-bezier(.32, .72, 0, 1), box-shadow .35s cubic-bezier(.32, .72, 0, 1);
+}
+
+.kanban-column.is-drag-over {
+  border-color: var(--workspace-accent);
+  background: color-mix(in srgb, var(--workspace-accent) 7%, var(--surface-2));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--workspace-accent) 15%, transparent);
+}
+
+.kanban-column.is-drag-over .column-empty {
+  border-color: color-mix(in srgb, var(--workspace-accent) 65%, var(--line-strong));
+  background: color-mix(in srgb, var(--workspace-accent) 8%, transparent);
+  color: var(--text);
+}
+
+.kanban-card[draggable="true"] {
+  cursor: grab;
+  user-select: none;
+}
+
+.kanban-card[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.kanban-card.is-dragging {
+  opacity: .55;
+  transform: rotate(1deg) scale(.98);
+  box-shadow: 0 18px 40px rgba(32, 35, 42, .16);
+}
+
+.kanban-card.is-moving {
+  opacity: .65;
+  pointer-events: none;
 }
 
 .task-card-placeholder {
