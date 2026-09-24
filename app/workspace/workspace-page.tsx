@@ -1304,10 +1304,13 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                   </button>
                 ) : null}
               </div>
-              <div className="kanban-grid">
+              <div className="grid grid-flow-col auto-cols-[minmax(280px,1fr)] gap-4 overflow-x-auto pb-2 xl:grid-flow-row xl:grid-cols-4 xl:auto-cols-auto">
                 {columns.map((column) => (
                   <section
-                    className={`kanban-column ${dragOverStatus === column.status ? "is-drag-over" : ""}`}
+                    className={cn(
+                      "min-h-[420px] rounded-2xl border border-border bg-secondary/70 p-3 transition-[background,border-color,box-shadow] duration-300",
+                      dragOverStatus === column.status && "border-primary bg-primary/5 shadow-[0_0_0_3px_hsl(var(--primary)/0.15)]",
+                    )}
                     key={column.status}
                     onDragOver={(event) =>
                       handleColumnDragOver(event, column.status)
@@ -1317,15 +1320,20 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                     }
                     onDrop={(event) => handleColumnDrop(event, column.status)}
                   >
-                    <div className="column-heading">
+                    <div className="mb-3 flex items-center gap-2 px-1 py-1">
                       <StatusDot tone={column.tone} />
-                      <h2>{column.label}</h2>
-                      <b>{groupedTasks[column.status].length}</b>
+                      <h2 className="m-0 text-sm font-bold">{column.label}</h2>
+                      <b className="ml-auto grid size-6 place-items-center rounded-md bg-muted text-xs text-muted-foreground">{groupedTasks[column.status].length}</b>
                     </div>
-                    <div className="task-stack">
+                    <div className="grid gap-3">
                       {groupedTasks[column.status].map((task) => (
                         <article
-                          className={`kanban-card ${draggedTaskId === task.id ? "is-dragging" : ""} ${movingTaskId === task.id ? "is-moving" : ""}`}
+                          className={cn(
+                            "rounded-xl border border-border bg-card p-4 shadow-sm transition-[transform,border-color,box-shadow,opacity] duration-300 hover:-translate-y-0.5 hover:border-input hover:shadow-md focus-within:-translate-y-0.5 focus-within:border-input focus-within:shadow-md",
+                            !isReadOnly && "cursor-grab active:cursor-grabbing",
+                            draggedTaskId === task.id && "rotate-1 scale-[0.98] opacity-55",
+                            movingTaskId === task.id && "pointer-events-none opacity-65",
+                          )}
                           key={task.id}
                           draggable={!isReadOnly}
                           onDragStart={(event) =>
@@ -1333,13 +1341,14 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                           }
                           onDragEnd={handleTaskDragEnd}
                         >
-                          <div className="task-card-top">
+                          <div className="flex items-center justify-between gap-2">
                             <PriorityPill priority={task.priority} />
                             <div
-                              className="task-card-actions"
+                              className="flex min-w-0 items-center gap-2"
                               onClick={(event) => event.stopPropagation()}
                             >
                               <select
+                                className="h-10 min-w-0 max-w-[132px] rounded-lg border border-border bg-card px-2 text-xs text-muted-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
                                 value={task.status}
                                 onChange={(event) =>
                                   void updateTask(task, {
@@ -1357,7 +1366,7 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                                 <option value="done">Concluído</option>
                               </select>
                               <button
-                                className="task-edit-trigger"
+                                className="inline-flex h-10 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary px-3 text-xs font-semibold text-foreground transition-colors hover:border-primary hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
                                 type="button"
                                 onClick={() => startTaskEdit(task)}
                                 disabled={isReadOnly}
@@ -1367,25 +1376,26 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                             </div>
                           </div>
                           <button
-                            className="task-card-open"
+                            className="mt-3 grid min-h-11 w-full items-center rounded-md border-0 bg-transparent p-0 text-left text-inherit outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                             type="button"
                             onClick={() => openTaskView(task)}
                           >
-                            <h3>{task.title}</h3>
+                            <h3 className="m-0 text-base leading-snug font-bold">{task.title}</h3>
                           </button>
                           <LabelPills labels={labels} labelIDs={task.label_ids} limit={3} />
                           {task.description ? (
                             <MarkdownPreview value={task.description} />
                           ) : (
-                            <p className="task-card-placeholder">
+                            <p className="mb-3 text-sm text-muted-foreground">
                               Sem descrição adicionada.
                             </p>
                           )}
                           <div
-                            className="task-card-footer"
+                            className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-3"
                             onClick={(event) => event.stopPropagation()}
                           >
                             <select
+                              className="h-10 min-w-0 max-w-[calc(100%-40px)] flex-1 rounded-lg border border-border bg-card px-2 text-xs text-muted-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
                               value={task.assignee_id || ""}
                               onChange={(event) =>
                                 void updateTask(task, {
@@ -1402,7 +1412,7 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                                 </option>
                               ))}
                             </select>
-                            <span>
+                            <span className="grid size-8 shrink-0 place-items-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
                               {task.assignee_id
                                 ? (
                                     members.find(
@@ -1422,7 +1432,7 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                         </article>
                       ))}
                       {!groupedTasks[column.status].length ? (
-                        <div className="column-empty">
+                        <div className="rounded-lg border border-dashed border-input px-3 py-7 text-center text-xs text-muted-foreground">
                           {selectedLabelIDs.length
                             ? "Nenhuma tarefa corresponde aos filtros"
                             : "Nenhuma tarefa aqui"}
@@ -1454,7 +1464,7 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
       >
         {selectedProject ? (
           <DialogContent
-            className="workspace-modal project-modal"
+            className="max-h-[calc(100dvh-32px)] w-[calc(100vw-32px)] max-w-2xl gap-0 overflow-y-auto rounded-2xl p-5 sm:p-6"
             showCloseButton={false}
             aria-labelledby="workspace-project-modal-title"
             onCloseAutoFocus={(event) => {
@@ -1462,13 +1472,13 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
               projectDialogTriggerRef.current?.focus();
             }}
           >
-            <div className="workspace-modal-header">
+            <div className="mb-6 flex items-start justify-between gap-4">
               <div>
                 <span className="workspace-kicker">Projeto ativo</span>
-                <h2 id="workspace-project-modal-title">Editar projeto</h2>
+                <h2 className="m-0 text-2xl leading-tight font-bold tracking-tight text-foreground" id="workspace-project-modal-title">Editar projeto</h2>
               </div>
               <button
-                className="workspace-panel-close"
+                className="grid size-10 shrink-0 place-items-center rounded-lg border border-border bg-secondary text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 type="button"
                 onClick={cancelProjectEdit}
                 aria-label="Fechar janela"
@@ -1560,7 +1570,10 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
       >
         {taskModal ? (
           <DialogContent
-            className={cn("workspace-modal", taskModal === "view" && "block max-h-[calc(100dvh-20px)] w-[calc(100vw-20px)] max-w-[1180px] p-4 sm:max-h-[calc(100dvh-40px)] sm:w-[min(1180px,calc(100vw-48px))] sm:p-[22px]")}
+            className={cn(
+              "max-h-[calc(100dvh-20px)] w-[calc(100vw-20px)] gap-0 overflow-y-auto rounded-2xl p-4 sm:max-h-[calc(100dvh-40px)] sm:w-[calc(100vw-48px)] sm:p-6",
+              taskModal === "view" ? "max-w-[1180px]" : "max-w-2xl",
+            )}
             showCloseButton={false}
             aria-labelledby="workspace-task-modal-title"
             onCloseAutoFocus={(event) => {
@@ -1568,7 +1581,7 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
               taskDialogTriggerRef.current?.focus();
             }}
           >
-            <div className="workspace-modal-header">
+            <div className="mb-4 flex items-start justify-between gap-4 sm:mb-6">
               <div>
                 <span className="workspace-kicker">
                   {taskModal === "create"
@@ -1577,7 +1590,7 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                       ? "Editar tarefa"
                       : "Detalhes da tarefa"}
                 </span>
-                <h2 id="workspace-task-modal-title">
+                <h2 className="m-0 max-w-[min(800px,calc(100vw-120px))] text-2xl leading-tight font-bold tracking-tight text-foreground sm:text-[28px]" id="workspace-task-modal-title">
                   {taskModal === "create"
                     ? "Adicionar tarefa"
                     : taskModal === "edit"
@@ -1586,7 +1599,7 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                 </h2>
               </div>
               <button
-                className="workspace-panel-close"
+                className="grid size-10 shrink-0 place-items-center rounded-lg border border-border bg-secondary text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 type="button"
                 onClick={closeTaskModal}
                 aria-label="Fechar janela"
