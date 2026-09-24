@@ -22,6 +22,7 @@ import { BlurFade } from "@/components/ui/blur-fade";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { API_URL, taskboardFetch } from "../lib/taskboard";
 import { useTaskboardToken } from "../lib/use-taskboard-token";
+import { cn } from "@/lib/utils";
 import { WorkspaceAvatarStack, WorkspaceIcon } from "./components/workspace-ui";
 
 type Status = "backlog" | "todo" | "in_progress" | "done";
@@ -77,6 +78,42 @@ const labelColors: { value: LabelColor; label: string }[] = [
   { value: "gray", label: "Cinza" },
 ];
 
+const labelPillClasses: Record<LabelColor, string> = {
+  blue: "bg-[hsl(var(--label-blue-background))] text-[hsl(var(--label-blue-foreground))]",
+  purple: "bg-[hsl(var(--label-purple-background))] text-[hsl(var(--label-purple-foreground))]",
+  green: "bg-[hsl(var(--label-green-background))] text-[hsl(var(--label-green-foreground))]",
+  orange: "bg-[hsl(var(--label-orange-background))] text-[hsl(var(--label-orange-foreground))]",
+  red: "bg-[hsl(var(--label-red-background))] text-[hsl(var(--label-red-foreground))]",
+  cyan: "bg-[hsl(var(--label-cyan-background))] text-[hsl(var(--label-cyan-foreground))]",
+  gray: "bg-[hsl(var(--label-gray-background))] text-[hsl(var(--label-gray-foreground))]",
+};
+
+const labelPillBase = "inline-flex min-h-6 max-w-full items-center overflow-hidden whitespace-nowrap rounded-md px-2 py-[3px] text-xs font-bold leading-[1.3] text-ellipsis";
+const labelOptionClass = "m-0 flex min-h-11 min-w-0 cursor-pointer items-center justify-start gap-2 text-xs font-medium text-foreground";
+const labelCheckboxClass = "m-0 size-5 shrink-0 accent-primary";
+const labelMenuClass = "absolute left-0 top-[calc(100%+6px)] z-20 grid w-[min(340px,calc(100vw-48px))] gap-3 rounded-[11px] border border-border bg-card p-3 shadow-[0_24px_80px_hsl(var(--foreground)/0.15)] sm:w-[min(420px,calc(100vw-64px))]";
+const labelSummaryClass = "flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-lg border border-border bg-card px-3 text-xs font-bold text-foreground marker:content-none focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-ring";
+const statusDotClasses: Record<string, string> = {
+  backlog: "bg-muted-foreground",
+  todo: "bg-muted-foreground",
+  progress: "bg-primary",
+  done: "bg-emerald-500",
+};
+
+function StatusDot({ tone }: { tone: string }) {
+  return <span className={cn("size-2 shrink-0 rounded-full", statusDotClasses[tone])} />;
+}
+
+function PriorityPill({ priority }: { priority: Priority }) {
+  const labels: Record<Priority, string> = { high: "Alta", medium: "Média", low: "Baixa" };
+  const tones: Record<Priority, string> = {
+    high: "bg-destructive/10 text-destructive",
+    medium: "bg-orange-500/15 text-amber-700 dark:text-amber-300",
+    low: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  };
+  return <span className={cn("inline-flex rounded-md px-2 py-1 text-xs font-bold", tones[priority])}>{labels[priority]}</span>;
+}
+
 const columns: { status: Status; label: string; tone: string }[] = [
   { status: "backlog", label: "Backlog", tone: "backlog" },
   { status: "todo", label: "A fazer", tone: "todo" },
@@ -128,14 +165,14 @@ function LabelPills({
   const Container = inline ? "span" : "div";
 
   return (
-    <Container className="task-label-list" aria-label="Etiquetas da tarefa">
+    <Container className="my-2 mb-2 flex min-w-0 flex-wrap items-center gap-1.5" aria-label="Etiquetas da tarefa">
       {visibleLabels.map((label) => (
-        <span className={`task-label-pill is-${label.color}`} key={label.id}>
+        <span className={cn(labelPillBase, labelPillClasses[label.color])} key={label.id}>
           {label.name}
         </span>
       ))}
       {remaining > 0 ? (
-        <span className="task-label-overflow" title={selectedLabels.slice(visibleLabels.length).map((label) => label.name).join(", ")}>
+        <span className="inline-flex min-h-6 max-w-full items-center overflow-hidden whitespace-nowrap rounded-md bg-secondary px-2 py-[3px] text-xs font-bold leading-[1.3] text-muted-foreground text-ellipsis" title={selectedLabels.slice(visibleLabels.length).map((label) => label.name).join(", ")}>
           +{remaining}
         </span>
       ) : null}
@@ -177,16 +214,17 @@ function LabelSelector({
   }
 
   return (
-    <details className="task-label-selector">
-      <summary>
+    <details className="relative w-full">
+      <summary className={cn(labelSummaryClass, "w-full justify-between [&::-webkit-details-marker]:hidden after:content-['⌄'] after:text-sm after:text-muted-foreground")}>
         <span>Etiquetas</span>
         <small>{selectedIDs.length ? `${selectedIDs.length} selecionada${selectedIDs.length === 1 ? "" : "s"}` : "Adicionar"}</small>
       </summary>
-      <div className="task-label-menu">
-        <div className="task-label-options">
+      <div className={cn(labelMenuClass, "w-[min(360px,calc(100vw-48px))]") }>
+        <div className="grid max-h-[190px] gap-1.5 overflow-y-auto">
           {labels.map((label) => (
-            <label className="task-label-option" key={label.id}>
+            <label className={labelOptionClass} key={label.id}>
               <input
+                className={labelCheckboxClass}
                 type="checkbox"
                 checked={selectedIDs.includes(label.id)}
                 onChange={(event) => {
@@ -195,13 +233,14 @@ function LabelSelector({
                     : selectedIDs.filter((id) => id !== label.id));
                 }}
               />
-              <span className={`task-label-pill is-${label.color}`}>{label.name}</span>
+              <span className={cn(labelPillBase, labelPillClasses[label.color])}>{label.name}</span>
             </label>
           ))}
-          {!labels.length ? <span className="task-label-empty">Nenhuma etiqueta criada.</span> : null}
+          {!labels.length ? <span className="text-xs text-muted-foreground">Nenhuma etiqueta criada.</span> : null}
         </div>
-        <div className="task-label-create">
+        <div className="grid grid-cols-[minmax(0,1fr)_110px] gap-2 border-t border-border pt-3">
           <input
+            className="min-h-11 min-w-0 rounded-lg border border-border bg-secondary px-2.5 text-xs text-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20"
             value={name}
             onChange={(event) => setName(event.target.value)}
             onKeyDown={(event) => {
@@ -215,6 +254,7 @@ function LabelSelector({
             aria-label="Nome da nova etiqueta"
           />
           <select
+            className="min-h-11 min-w-0 rounded-lg border border-border bg-secondary px-2.5 text-xs text-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20"
             value={color}
             onChange={(event) => setColor(event.target.value as LabelColor)}
             aria-label="Cor da nova etiqueta"
@@ -223,10 +263,47 @@ function LabelSelector({
               <option value={option.value} key={option.value}>{option.label}</option>
             ))}
           </select>
-          <button type="button" onClick={() => void createLabel()} disabled={!name.trim() || creating}>
+          <button className="col-span-full min-h-11 rounded-lg border border-border bg-secondary px-2.5 text-xs font-bold text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-55" type="button" onClick={() => void createLabel()} disabled={!name.trim() || creating}>
             {creating ? "Criando" : "Criar etiqueta"}
           </button>
         </div>
+      </div>
+    </details>
+  );
+}
+
+function LabelFilter({
+  labels,
+  selectedIDs,
+  onChange,
+  emptyText,
+}: {
+  labels: TaskLabel[];
+  selectedIDs: string[];
+  onChange: (ids: string[]) => void;
+  emptyText: string;
+}) {
+  return (
+    <details className="relative">
+      <summary className={cn(labelSummaryClass, "[&::-webkit-details-marker]:hidden after:content-['⌄'] after:text-sm after:text-muted-foreground")}>
+        <span>Filtrar por etiquetas</span>
+        {selectedIDs.length ? <b className="grid size-[22px] place-items-center rounded-md bg-secondary text-xs text-foreground">{selectedIDs.length}</b> : null}
+      </summary>
+      <div className={cn(labelMenuClass, "max-h-[300px] overflow-y-auto") }>
+        {labels.map((label) => (
+          <label className={labelOptionClass} key={label.id}>
+            <input
+              className={labelCheckboxClass}
+              type="checkbox"
+              checked={selectedIDs.includes(label.id)}
+              onChange={(event) => onChange(event.target.checked
+                ? [...selectedIDs, label.id]
+                : selectedIDs.filter((id) => id !== label.id))}
+            />
+            <span className={cn(labelPillBase, labelPillClasses[label.color])}>{label.name}</span>
+          </label>
+        ))}
+        {!labels.length ? <span className="text-xs text-muted-foreground">{emptyText}</span> : null}
       </div>
     </details>
   );
@@ -1115,14 +1192,14 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                   </div>
                 </MagicCard>
               </BlurFade>
-              <nav className="project-view-tabs" aria-label="Visões do projeto">
+              <nav className="my-1 mb-5 flex gap-1 overflow-x-auto border-b border-border" aria-label="Visões do projeto">
                 {([
                   ["summary", "Resumo", "summary"],
                   ["backlog", "Backlog", "backlog"],
                   ["board", "Quadro", ""],
                 ] as const).map(([tab, label, suffix]) => (
                   <Link
-                    className={`project-view-tab ${view === tab ? "is-active" : ""}`}
+                    className={cn("inline-flex min-h-12 shrink-0 items-center gap-2 border-b-2 border-transparent px-3.5 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-ring", view === tab && "border-primary text-primary")}
                     href={`/workspace/${selectedProject.id}${suffix ? `/${suffix}` : ""}`}
                     aria-current={view === tab ? "page" : undefined}
                     key={tab}
@@ -1173,76 +1250,56 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                 </div>
               </div>
               {view === "summary" ? (
-                <section className="project-summary" aria-label="Resumo do projeto">
-                  <div className="summary-stat-grid">
-                    <article className="summary-stat-card"><span>Total de tarefas</span><strong>{filteredTasks.length}</strong><small>{tasks.length - filteredTasks.length ? `${tasks.length - filteredTasks.length} ocultas pelos filtros` : "No projeto"}</small></article>
-                    <article className="summary-stat-card"><span>Concluídas</span><strong>{groupedTasks.done.length}</strong><small>{filteredTasks.length ? `${Math.round(groupedTasks.done.length / filteredTasks.length * 100)}% do total` : "Sem tarefas"}</small></article>
-                    <article className="summary-stat-card"><span>Atrasadas</span><strong>{overdueTasks.length}</strong><small>Prazo já vencido</small></article>
-                    <article className="summary-stat-card"><span>Próximos 7 dias</span><strong>{upcomingTasks.length}</strong><small>Tarefas em aberto</small></article>
+                <section className="grid gap-5" aria-label="Resumo do projeto">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <article className="grid min-w-0 gap-2 rounded-xl border border-border bg-card p-[18px]"><span className="text-xs text-muted-foreground">Total de tarefas</span><strong className="text-3xl leading-none">{filteredTasks.length}</strong><small className="text-xs text-muted-foreground">{tasks.length - filteredTasks.length ? `${tasks.length - filteredTasks.length} ocultas pelos filtros` : "No projeto"}</small></article>
+                    <article className="grid min-w-0 gap-2 rounded-xl border border-border bg-card p-[18px]"><span className="text-xs text-muted-foreground">Concluídas</span><strong className="text-3xl leading-none">{groupedTasks.done.length}</strong><small className="text-xs text-muted-foreground">{filteredTasks.length ? `${Math.round(groupedTasks.done.length / filteredTasks.length * 100)}% do total` : "Sem tarefas"}</small></article>
+                    <article className="grid min-w-0 gap-2 rounded-xl border border-border bg-card p-[18px]"><span className="text-xs text-muted-foreground">Atrasadas</span><strong className="text-3xl leading-none">{overdueTasks.length}</strong><small className="text-xs text-muted-foreground">Prazo já vencido</small></article>
+                    <article className="grid min-w-0 gap-2 rounded-xl border border-border bg-card p-[18px]"><span className="text-xs text-muted-foreground">Próximos 7 dias</span><strong className="text-3xl leading-none">{upcomingTasks.length}</strong><small className="text-xs text-muted-foreground">Tarefas em aberto</small></article>
                   </div>
-                  <div className="summary-panels">
-                    <section className="summary-panel">
-                      <header><div><span className="workspace-kicker">Fluxo de trabalho</span><h2>Tarefas por etapa</h2></div><span>{filteredTasks.length} no total</span></header>
-                      <div className="summary-status-list">
+                  <div className="grid items-start gap-4 md:grid-cols-[minmax(0,1.15fr)_minmax(0,.85fr)]">
+                    <section className="rounded-xl border border-border bg-card p-5">
+                      <header className="flex items-center justify-between gap-3"><div><span className="workspace-kicker">Fluxo de trabalho</span><h2 className="mt-0.5 text-[17px]">Tarefas por etapa</h2></div><span className="text-xs text-muted-foreground">{filteredTasks.length} no total</span></header>
+                      <div className="mt-6 grid gap-4">
                         {columns.map((column) => {
                           const count = groupedTasks[column.status].length;
                           const percent = filteredTasks.length ? Math.round(count / filteredTasks.length * 100) : 0;
-                          return <div className="summary-status-row" key={column.status}><div><span className={`column-dot ${column.tone}`} /><strong>{column.label}</strong><b>{count}</b></div><div className="summary-progress-track"><span style={{ width: `${percent}%` }} /></div></div>;
+                          return <div key={column.status}><div className="flex items-center gap-2"><StatusDot tone={column.tone} /><strong>{column.label}</strong><b className="ml-auto">{count}</b></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><span className="block h-full rounded-full bg-primary" style={{ width: `${percent}%` }} /></div></div>;
                         })}
                       </div>
-                      <header className="summary-subheading"><div><span className="workspace-kicker">Equipe</span><h2>Tarefas por responsável</h2></div></header>
-                      <div className="summary-assignee-list">
-                        {[...members.map((member) => ({ id: member.id, name: member.alias || member.email, count: filteredTasks.filter((task) => task.assignee_id === member.id).length })), { id: "unassigned", name: "Sem responsável", count: filteredTasks.filter((task) => !task.assignee_id).length }].filter((item) => item.count > 0).map((item) => <div key={item.id}><span>{item.name}</span><b>{item.count}</b></div>)}
-                        {!filteredTasks.length ? <p className="project-view-empty">As tarefas aparecerão aqui conforme forem criadas.</p> : null}
+                      <header className="mt-[30px]"><div><span className="workspace-kicker">Equipe</span><h2 className="mt-0.5 text-[17px]">Tarefas por responsável</h2></div></header>
+                      <div className="mt-3 grid">
+                        {[...members.map((member) => ({ id: member.id, name: member.alias || member.email, count: filteredTasks.filter((task) => task.assignee_id === member.id).length })), { id: "unassigned", name: "Sem responsável", count: filteredTasks.filter((task) => !task.assignee_id).length }].filter((item) => item.count > 0).map((item) => <div className="flex justify-between gap-3 border-b border-border py-2.5 text-[13px]" key={item.id}><span>{item.name}</span><b>{item.count}</b></div>)}
+                        {!filteredTasks.length ? <p className="mt-5 p-[18px] text-center text-[13px] text-muted-foreground">As tarefas aparecerão aqui conforme forem criadas.</p> : null}
                       </div>
                     </section>
-                    <section className="summary-panel">
-                      <header><div><span className="workspace-kicker">Prazos</span><h2>Atenção nesta semana</h2></div><span>{overdueTasks.length + upcomingTasks.length} tarefas</span></header>
-                      {[...overdueTasks, ...upcomingTasks].slice(0, 8).map((task) => <button className="summary-due-task" type="button" key={task.id} onClick={() => openTaskView(task)}><span className={task.due_date! < localToday ? "is-overdue" : ""}>{task.due_date! < localToday ? "Atrasada" : new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "short" }).format(new Date(`${task.due_date}T12:00:00`))}</span><strong>{task.title}</strong><small>{members.find((member) => member.id === task.assignee_id)?.alias || "Sem responsável"}</small></button>)}
-                      {!overdueTasks.length && !upcomingTasks.length ? <p className="project-view-empty">Nenhum prazo atrasado ou próximo nos próximos sete dias.</p> : null}
+                    <section className="rounded-xl border border-border bg-card p-5">
+                      <header className="flex items-center justify-between gap-3"><div><span className="workspace-kicker">Prazos</span><h2 className="mt-0.5 text-[17px]">Atenção nesta semana</h2></div><span className="text-xs text-muted-foreground">{overdueTasks.length + upcomingTasks.length} tarefas</span></header>
+                      {[...overdueTasks, ...upcomingTasks].slice(0, 8).map((task) => <button className="mt-2 grid w-full gap-1 rounded-lg border border-border bg-transparent p-3 text-left text-foreground transition-colors hover:border-ring/50 hover:bg-muted" type="button" key={task.id} onClick={() => openTaskView(task)}><span className={cn("text-xs text-muted-foreground", task.due_date! < localToday && "text-destructive")}>{task.due_date! < localToday ? "Atrasada" : new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "short" }).format(new Date(`${task.due_date}T12:00:00`))}</span><strong className="overflow-hidden text-ellipsis whitespace-nowrap">{task.title}</strong><small className="text-xs text-muted-foreground">{members.find((member) => member.id === task.assignee_id)?.alias || "Sem responsável"}</small></button>)}
+                      {!overdueTasks.length && !upcomingTasks.length ? <p className="mt-5 p-[18px] text-center text-[13px] text-muted-foreground">Nenhum prazo atrasado ou próximo nos próximos sete dias.</p> : null}
                     </section>
                   </div>
                 </section>
               ) : null}
               {view === "backlog" ? (
-                <section className="project-backlog" aria-label="Backlog de tarefas">
-                  <div className="backlog-toolbar">
-                    <label>Etapa<select value={backlogStatusFilter} onChange={(event) => setBacklogStatusFilter(event.target.value as "all" | Status)}><option value="all">Todas as etapas</option>{columns.map((column) => <option value={column.status} key={column.status}>{column.label}</option>)}</select></label>
-                    <details className="kanban-label-filter"><summary><span>Filtrar por etiquetas</span>{selectedLabelIDs.length ? <b>{selectedLabelIDs.length}</b> : null}</summary><div className="kanban-label-filter-menu">{labels.map((label) => <label className="task-label-option" key={label.id}><input type="checkbox" checked={selectedLabelIDs.includes(label.id)} onChange={(event) => setSelectedLabelIDs((current) => event.target.checked ? [...current, label.id] : current.filter((id) => id !== label.id))} /><span className={`task-label-pill is-${label.color}`}>{label.name}</span></label>)}{!labels.length ? <span className="task-label-empty">Nenhuma etiqueta criada.</span> : null}</div></details>
-                    {selectedLabelIDs.length ? <button className="kanban-filter-clear" type="button" onClick={() => setSelectedLabelIDs([])}>Limpar etiquetas</button> : null}
+                <section className="grid gap-5" aria-label="Backlog de tarefas">
+                  <div className="flex flex-wrap items-end gap-3">
+                    <label className="grid gap-1.5 text-xs text-muted-foreground">Etapa<select className="min-h-10 rounded-lg border border-border bg-card px-2.5 text-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20" value={backlogStatusFilter} onChange={(event) => setBacklogStatusFilter(event.target.value as "all" | Status)}><option value="all">Todas as etapas</option>{columns.map((column) => <option value={column.status} key={column.status}>{column.label}</option>)}</select></label>
+                    <LabelFilter labels={labels} selectedIDs={selectedLabelIDs} onChange={setSelectedLabelIDs} emptyText="Nenhuma etiqueta criada." />
+                    {selectedLabelIDs.length ? <button className="min-h-11 rounded-lg border border-border bg-secondary px-2.5 text-xs font-bold text-muted-foreground transition-colors hover:bg-muted" type="button" onClick={() => setSelectedLabelIDs([])}>Limpar etiquetas</button> : null}
                   </div>
                   {columns.filter((column) => backlogStatusFilter === "all" || column.status === backlogStatusFilter).map((column) => {
                     const statusTasks = backlogTasks.filter((task) => task.status === column.status);
-                    return <section className="backlog-group" key={column.status}><header><span className={`column-dot ${column.tone}`} /><h2>{column.label}</h2><b>{statusTasks.length}</b></header>{statusTasks.map((task) => <button className="backlog-task-row" type="button" key={task.id} onClick={() => openTaskView(task)}><span className="backlog-task-main"><strong>{task.title}</strong><small>{task.description || "Sem descrição"}</small></span><LabelPills labels={labels} labelIDs={task.label_ids} limit={2} inline /><span className={`priority ${task.priority}`}>{task.priority === "high" ? "Alta" : task.priority === "low" ? "Baixa" : "Média"}</span><span>{members.find((member) => member.id === task.assignee_id)?.alias || "Sem responsável"}</span><span>{task.due_date ? new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "short", year: "numeric" }).format(new Date(`${task.due_date}T12:00:00`)) : "Sem prazo"}</span></button>)}{!statusTasks.length ? <p className="backlog-empty">Nenhuma tarefa nesta etapa.</p> : null}</section>;
+                    return <section className="overflow-hidden rounded-xl border border-border bg-card" key={column.status}><header className="flex min-h-[54px] items-center gap-2 border-b border-border px-4"><StatusDot tone={column.tone} /><h2 className="m-0 text-sm">{column.label}</h2><b className="grid size-6 place-items-center rounded-full bg-muted text-xs">{statusTasks.length}</b></header>{statusTasks.map((task) => <button className="grid w-full grid-cols-[minmax(180px,1.6fr)_minmax(100px,.8fr)_70px_minmax(100px,.8fr)_110px] items-center gap-3.5 border-0 border-b border-border bg-transparent px-4 py-3 text-left text-foreground transition-colors last:border-b-0 hover:bg-muted focus-visible:bg-muted max-md:grid-cols-[minmax(140px,1.4fr)_minmax(80px,.8fr)_60px] max-md:[&>span:nth-last-child(-n+2)]:hidden max-sm:grid-cols-[minmax(0,1fr)_auto] max-sm:gap-2 max-sm:px-3 max-sm:[&>span:nth-last-child(-n+2)]:hidden" type="button" key={task.id} onClick={() => openTaskView(task)}><span className="grid min-w-0 gap-1"><strong className="overflow-hidden text-ellipsis whitespace-nowrap">{task.title}</strong><small className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">{task.description || "Sem descrição"}</small></span><LabelPills labels={labels} labelIDs={task.label_ids} limit={2} inline /><PriorityPill priority={task.priority} /><span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">{members.find((member) => member.id === task.assignee_id)?.alias || "Sem responsável"}</span><span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">{task.due_date ? new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "short", year: "numeric" }).format(new Date(`${task.due_date}T12:00:00`)) : "Sem prazo"}</span></button>)}{!statusTasks.length ? <p className="m-0 p-4 text-[13px] text-muted-foreground">Nenhuma tarefa nesta etapa.</p> : null}</section>;
                   })}
-                  {!backlogTasks.length ? <div className="project-view-empty">Nenhuma tarefa corresponde aos filtros aplicados.</div> : null}
+                  {!backlogTasks.length ? <div className="mt-5 p-[18px] text-center text-[13px] text-muted-foreground">Nenhuma tarefa corresponde aos filtros aplicados.</div> : null}
                 </section>
               ) : null}
               {view === "board" ? <>
-              <div className="kanban-filters">
-                <details className="kanban-label-filter">
-                  <summary>
-                    <span>Filtrar por etiquetas</span>
-                    {selectedLabelIDs.length ? <b>{selectedLabelIDs.length}</b> : null}
-                  </summary>
-                  <div className="kanban-label-filter-menu">
-                    {labels.map((label) => (
-                      <label className="task-label-option" key={label.id}>
-                        <input
-                          type="checkbox"
-                          checked={selectedLabelIDs.includes(label.id)}
-                          onChange={(event) => setSelectedLabelIDs((current) => event.target.checked
-                            ? [...current, label.id]
-                            : current.filter((id) => id !== label.id))}
-                        />
-                        <span className={`task-label-pill is-${label.color}`}>{label.name}</span>
-                      </label>
-                    ))}
-                    {!labels.length ? <span className="task-label-empty">Crie etiquetas ao editar uma tarefa.</span> : null}
-                  </div>
-                </details>
+              <div className="relative z-[5] -mt-2.5 mb-4 flex items-center justify-center gap-2.5 sm:-mt-1.5">
+                <LabelFilter labels={labels} selectedIDs={selectedLabelIDs} onChange={setSelectedLabelIDs} emptyText="Crie etiquetas ao editar uma tarefa." />
                 {selectedLabelIDs.length ? (
-                  <button className="kanban-filter-clear" type="button" onClick={() => setSelectedLabelIDs([])}>
+                  <button className="min-h-11 rounded-lg border border-border bg-secondary px-2.5 text-xs font-bold text-muted-foreground transition-colors hover:bg-muted" type="button" onClick={() => setSelectedLabelIDs([])}>
                     Limpar filtros
                   </button>
                 ) : null}
@@ -1261,7 +1318,7 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                     onDrop={(event) => handleColumnDrop(event, column.status)}
                   >
                     <div className="column-heading">
-                      <span className={`column-dot ${column.tone}`} />
+                      <StatusDot tone={column.tone} />
                       <h2>{column.label}</h2>
                       <b>{groupedTasks[column.status].length}</b>
                     </div>
@@ -1277,13 +1334,7 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                           onDragEnd={handleTaskDragEnd}
                         >
                           <div className="task-card-top">
-                            <span className={`priority ${task.priority}`}>
-                              {task.priority === "high"
-                                ? "Alta"
-                                : task.priority === "low"
-                                  ? "Baixa"
-                                  : "Média"}
-                            </span>
+                            <PriorityPill priority={task.priority} />
                             <div
                               className="task-card-actions"
                               onClick={(event) => event.stopPropagation()}
@@ -1509,7 +1560,7 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
       >
         {taskModal ? (
           <DialogContent
-            className={`workspace-modal ${taskModal === "view" ? "task-detail-modal" : ""}`}
+            className={cn("workspace-modal", taskModal === "view" && "block max-h-[calc(100dvh-20px)] w-[calc(100vw-20px)] max-w-[1180px] p-4 sm:max-h-[calc(100dvh-40px)] sm:w-[min(1180px,calc(100vw-48px))] sm:p-[22px]")}
             showCloseButton={false}
             aria-labelledby="workspace-task-modal-title"
             onCloseAutoFocus={(event) => {
@@ -1545,34 +1596,34 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
               </button>
             </div>
             {taskModal === "view" && viewingTask ? (
-              <div className="task-detail-layout">
-                <div className="task-detail-main">
-                  <div className="task-detail-description-section">
-                    <header><h3>Descrição</h3>{!isReadOnly ? <button className="task-detail-text-action" type="button" onClick={() => startTaskEdit(viewingTask)}>Editar</button> : null}</header>
-                    <div className="task-modal-description"><MarkdownPreview value={viewingTask.description} emptyText="Adicionar descrição" /></div>
+              <div className="grid items-start gap-[18px] sm:grid-cols-[minmax(0,1fr)_250px] lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-7">
+                <div className="grid min-w-0 gap-6">
+                  <div>
+                    <header className="mb-1.5 flex items-center justify-between gap-3"><h3 className="m-0 text-[15px]">Descrição</h3>{!isReadOnly ? <button className="border-0 bg-transparent text-xs font-semibold text-primary" type="button" onClick={() => startTaskEdit(viewingTask)}>Editar</button> : null}</header>
+                    <div className="m-0 min-h-12 border-0 bg-transparent px-0 py-2"><MarkdownPreview value={viewingTask.description} emptyText="Adicionar descrição" /></div>
                   </div>
-                  <section className="task-detail-section">
-                    <header><div><h3>Anexos</h3><small>{taskAttachments.length} {taskAttachments.length === 1 ? "arquivo" : "arquivos"}</small></div>{!isReadOnly ? <label className={`task-attachment-add ${taskDetailSaving ? "is-disabled" : ""}`}>+ Adicionar anexo<input type="file" onChange={uploadTaskAttachment} disabled={taskDetailSaving} aria-label="Adicionar anexo à tarefa" /></label> : null}</header>
-                    {taskDetailLoading ? <p className="task-detail-empty">Carregando anexos…</p> : taskAttachments.length ? <div className="task-attachment-list">{taskAttachments.map((attachment) => <article className="task-attachment-row" key={attachment.id}><span className="task-attachment-file-icon"><WorkspaceIcon name="screen" /></span><div><strong>{attachment.name}</strong><small>{(attachment.size / 1024).toFixed(attachment.size < 1024 * 1024 ? 0 : 1)} KB · {new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "short", year: "numeric" }).format(new Date(attachment.created_at))}</small></div><button type="button" onClick={() => void downloadTaskAttachment(attachment)} aria-label={`Baixar ${attachment.name}`}><WorkspaceIcon name="download" /></button>{!isReadOnly ? <button type="button" onClick={() => void removeTaskResource(`/api/task-attachments/${attachment.id}`, attachment.id, "attachment")} aria-label={`Remover ${attachment.name}`}>×</button> : null}</article>)}</div> : <p className="task-detail-empty">Nenhum anexo foi adicionado.</p>}
+                  <section className="grid gap-3 border-t border-border pt-[18px]">
+                    <header className="flex items-center justify-between gap-3"><div className="grid gap-1"><h3 className="m-0 text-[15px]">Anexos</h3><small className="text-xs text-muted-foreground">{taskAttachments.length} {taskAttachments.length === 1 ? "arquivo" : "arquivos"}</small></div>{!isReadOnly ? <label className={cn("relative inline-flex min-h-9 cursor-pointer items-center rounded-lg border border-border bg-card px-3 text-xs font-semibold", taskDetailSaving && "pointer-events-none opacity-55")}>+ Adicionar anexo<input className="absolute inset-0 size-full cursor-pointer opacity-0" type="file" onChange={uploadTaskAttachment} disabled={taskDetailSaving} aria-label="Adicionar anexo à tarefa" /></label> : null}</header>
+                    {taskDetailLoading ? <p className="m-0 text-xs text-muted-foreground">Carregando anexos…</p> : taskAttachments.length ? <div className="grid gap-2">{taskAttachments.map((attachment) => <article className="grid grid-cols-[36px_minmax(0,1fr)_36px_36px] items-center gap-2.5 rounded-lg border border-border p-2.5" key={attachment.id}><span className="grid size-[34px] place-items-center rounded-full bg-muted"><WorkspaceIcon name="screen" /></span><div className="grid min-w-0 gap-1"><strong className="overflow-hidden text-[13px] text-ellipsis whitespace-nowrap">{attachment.name}</strong><small className="text-[11px] text-muted-foreground">{(attachment.size / 1024).toFixed(attachment.size < 1024 * 1024 ? 0 : 1)} KB · {new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "short", year: "numeric" }).format(new Date(attachment.created_at))}</small></div><button className="grid size-[34px] place-items-center rounded-md border-0 bg-transparent text-xl text-muted-foreground hover:bg-muted hover:text-foreground" type="button" onClick={() => void downloadTaskAttachment(attachment)} aria-label={`Baixar ${attachment.name}`}><WorkspaceIcon name="download" /></button>{!isReadOnly ? <button className="grid size-[34px] place-items-center rounded-md border-0 bg-transparent text-xl text-muted-foreground hover:bg-muted hover:text-foreground" type="button" onClick={() => void removeTaskResource(`/api/task-attachments/${attachment.id}`, attachment.id, "attachment")} aria-label={`Remover ${attachment.name}`}>×</button> : null}</article>)}</div> : <p className="m-0 text-xs text-muted-foreground">Nenhum anexo foi adicionado.</p>}
                   </section>
-                  <section className="task-detail-section">
-                    <header><div><h3>Subtarefas</h3><small>{taskSubtasks.filter((item) => item.done).length} de {taskSubtasks.length} concluídas</small></div></header>
-                    {taskDetailLoading ? <p className="task-detail-empty">Carregando subtarefas…</p> : <div className="task-subtask-list">{taskSubtasks.map((subtask) => <div className="task-subtask-row" key={subtask.id}><input type="checkbox" checked={subtask.done} disabled={isReadOnly} onChange={() => void toggleTaskSubtask(subtask)} aria-label={`Marcar ${subtask.title} como ${subtask.done ? "pendente" : "concluída"}`} /><span className={subtask.done ? "is-done" : ""}>{subtask.title}</span>{!isReadOnly ? <button type="button" onClick={() => void removeTaskResource(`/api/task-subtasks/${subtask.id}`, subtask.id, "subtask")} aria-label={`Remover subtarefa ${subtask.title}`}>×</button> : null}</div>)}</div>}
-                    {!isReadOnly ? <form className="task-inline-add" onSubmit={addTaskSubtask}><input value={taskSubtaskDraft} onChange={(event) => setTaskSubtaskDraft(event.target.value)} placeholder="Adicionar subtarefa" aria-label="Nova subtarefa" maxLength={200} /><button type="submit" disabled={taskDetailSaving || !taskSubtaskDraft.trim()}>Adicionar</button></form> : null}
+                  <section className="grid gap-3 border-t border-border pt-[18px]">
+                    <header><div className="grid gap-1"><h3 className="m-0 text-[15px]">Subtarefas</h3><small className="text-xs text-muted-foreground">{taskSubtasks.filter((item) => item.done).length} de {taskSubtasks.length} concluídas</small></div></header>
+                    {taskDetailLoading ? <p className="m-0 text-xs text-muted-foreground">Carregando subtarefas…</p> : <div className="grid gap-2">{taskSubtasks.map((subtask) => <div className="grid min-h-[38px] grid-cols-[22px_minmax(0,1fr)_34px] items-center gap-2" key={subtask.id}><input className="size-[18px] accent-primary" type="checkbox" checked={subtask.done} disabled={isReadOnly} onChange={() => void toggleTaskSubtask(subtask)} aria-label={`Marcar ${subtask.title} como ${subtask.done ? "pendente" : "concluída"}`} /><span className={cn("text-[13px]", subtask.done && "text-muted-foreground line-through")}>{subtask.title}</span>{!isReadOnly ? <button className="grid size-[34px] place-items-center rounded-md border-0 bg-transparent text-xl text-muted-foreground hover:bg-muted hover:text-foreground" type="button" onClick={() => void removeTaskResource(`/api/task-subtasks/${subtask.id}`, subtask.id, "subtask")} aria-label={`Remover subtarefa ${subtask.title}`}>×</button> : null}</div>)}</div>}
+                    {!isReadOnly ? <form className="flex gap-2" onSubmit={addTaskSubtask}><input className="min-w-0 flex-1 rounded-lg border border-border bg-card px-3 py-2.5 text-[13px] text-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20" value={taskSubtaskDraft} onChange={(event) => setTaskSubtaskDraft(event.target.value)} placeholder="Adicionar subtarefa" aria-label="Nova subtarefa" maxLength={200} /><button className="rounded-lg border border-border bg-secondary px-3 text-xs font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50" type="submit" disabled={taskDetailSaving || !taskSubtaskDraft.trim()}>Adicionar</button></form> : null}
                   </section>
-                  <section className="task-detail-section task-comments-section">
-                    <header><div><h3>Comentários</h3><small>{taskComments.length} {taskComments.length === 1 ? "comentário" : "comentários"}</small></div></header>
-                    {taskDetailLoading ? <p className="task-detail-empty">Carregando comentários…</p> : taskComments.length ? <div className="task-comment-list">{taskComments.map((comment) => { const author = members.find((member) => member.id === comment.author_id); return <article className="task-comment" key={comment.id}><span className="task-comment-avatar">{(author?.alias || author?.email || "?").slice(0, 1).toUpperCase()}</span><div><header><strong>{author?.alias || author?.email || "Integrante"}</strong><time dateTime={comment.created_at}>{new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(comment.created_at))}</time></header><p>{comment.body}</p></div>{comment.author_id === currentUserID ? <button type="button" onClick={() => void removeTaskResource(`/api/task-comments/${comment.id}`, comment.id, "comment")} aria-label="Remover comentário">×</button> : null}</article>; })}</div> : <p className="task-detail-empty">Ainda não há comentários.</p>}
-                    {!isReadOnly ? <form className="task-comment-form" onSubmit={addTaskComment}><textarea value={taskCommentDraft} onChange={(event) => setTaskCommentDraft(event.target.value)} placeholder="Escreva um comentário…" aria-label="Novo comentário" maxLength={5000} rows={3} /><div><small>Comente para compartilhar uma atualização com a equipe.</small><button className="edit-save-button" type="submit" disabled={taskDetailSaving || !taskCommentDraft.trim()}>Comentar</button></div></form> : null}
+                  <section className="grid gap-3 border-t border-border pt-[18px]">
+                    <header><div className="grid gap-1"><h3 className="m-0 text-[15px]">Comentários</h3><small className="text-xs text-muted-foreground">{taskComments.length} {taskComments.length === 1 ? "comentário" : "comentários"}</small></div></header>
+                    {taskDetailLoading ? <p className="m-0 text-xs text-muted-foreground">Carregando comentários…</p> : taskComments.length ? <div className="grid gap-2">{taskComments.map((comment) => { const author = members.find((member) => member.id === comment.author_id); return <article className="grid grid-cols-[36px_minmax(0,1fr)_34px] items-start gap-2.5" key={comment.id}><span className="grid size-[34px] place-items-center rounded-full bg-muted text-xs font-bold text-primary">{(author?.alias || author?.email || "?").slice(0, 1).toUpperCase()}</span><div className="min-w-0 rounded-lg border border-border px-3 py-2.5"><header className="flex flex-wrap items-baseline gap-2"><strong className="text-xs">{author?.alias || author?.email || "Integrante"}</strong><time className="text-[11px] text-muted-foreground" dateTime={comment.created_at}>{new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(comment.created_at))}</time></header><p className="mt-2 break-words text-[13px] leading-6 whitespace-pre-wrap">{comment.body}</p></div>{comment.author_id === currentUserID ? <button className="grid size-[34px] place-items-center rounded-md border-0 bg-transparent text-xl text-muted-foreground hover:bg-muted hover:text-foreground" type="button" onClick={() => void removeTaskResource(`/api/task-comments/${comment.id}`, comment.id, "comment")} aria-label="Remover comentário">×</button> : null}</article>; })}</div> : <p className="m-0 text-xs text-muted-foreground">Ainda não há comentários.</p>}
+                    {!isReadOnly ? <form className="grid gap-2 rounded-[10px] border border-border p-3" onSubmit={addTaskComment}><textarea className="w-full rounded-lg border border-border bg-card px-3 py-2.5 text-[13px] text-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20" value={taskCommentDraft} onChange={(event) => setTaskCommentDraft(event.target.value)} placeholder="Escreva um comentário…" aria-label="Novo comentário" maxLength={5000} rows={3} /><div className="flex items-center justify-between gap-3 max-sm:flex-col max-sm:items-start"><small className="text-xs text-muted-foreground">Comente para compartilhar uma atualização com a equipe.</small><button className="edit-save-button" type="submit" disabled={taskDetailSaving || !taskCommentDraft.trim()}>Comentar</button></div></form> : null}
                   </section>
                 </div>
-                <aside className="task-detail-sidebar" aria-label="Informações da tarefa">
-                  <header><h3>Informações</h3>{!isReadOnly ? <button type="button" onClick={() => startTaskEdit(viewingTask)} aria-label="Editar todos os campos">Editar</button> : null}</header>
-                  <label>Status<select value={viewingTask.status} disabled={isReadOnly} onChange={(event) => void updateTask(viewingTask, { status: event.target.value as Status })}>{columns.map((column) => <option value={column.status} key={column.status}>{column.label}</option>)}</select></label>
-                  <label>Responsável<select value={viewingTask.assignee_id || ""} disabled={isReadOnly} onChange={(event) => void updateTask(viewingTask, { assignee_id: event.target.value })}><option value="">Sem responsável</option>{members.map((member) => <option value={member.id} key={member.id}>{member.alias || member.email}</option>)}</select></label>
-                  <label>Prioridade<select value={viewingTask.priority} disabled={isReadOnly} onChange={(event) => void updateTask(viewingTask, { priority: event.target.value as Priority })}><option value="low">Baixa</option><option value="medium">Média</option><option value="high">Alta</option></select></label>
-                  <label>Prazo<input type="date" value={viewingTask.due_date || ""} disabled={isReadOnly} onChange={(event) => void updateTask(viewingTask, { due_date: event.target.value })} /></label>
-                  <div className="task-detail-labels"><span>Etiquetas</span><LabelSelector labels={labels} selectedIDs={viewingTask.label_ids || []} onChange={(ids) => void updateTask(viewingTask, { label_ids: ids })} onCreateLabel={createLabel} disabled={isReadOnly} /></div>
+                <aside className="order-first grid gap-4 rounded-[10px] border border-border bg-muted/20 p-4 sm:order-none" aria-label="Informações da tarefa">
+                  <header className="flex items-center justify-between border-b border-border pb-3"><h3 className="m-0 text-[15px]">Informações</h3>{!isReadOnly ? <button className="border-0 bg-transparent text-xs font-semibold text-primary" type="button" onClick={() => startTaskEdit(viewingTask)} aria-label="Editar todos os campos">Editar</button> : null}</header>
+                  <label className="grid gap-1.5 text-xs text-muted-foreground">Status<select className="min-h-[38px] w-full rounded-md border border-border bg-card px-2 text-[13px] text-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-75" value={viewingTask.status} disabled={isReadOnly} onChange={(event) => void updateTask(viewingTask, { status: event.target.value as Status })}>{columns.map((column) => <option value={column.status} key={column.status}>{column.label}</option>)}</select></label>
+                  <label className="grid gap-1.5 text-xs text-muted-foreground">Responsável<select className="min-h-[38px] w-full rounded-md border border-border bg-card px-2 text-[13px] text-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-75" value={viewingTask.assignee_id || ""} disabled={isReadOnly} onChange={(event) => void updateTask(viewingTask, { assignee_id: event.target.value })}><option value="">Sem responsável</option>{members.map((member) => <option value={member.id} key={member.id}>{member.alias || member.email}</option>)}</select></label>
+                  <label className="grid gap-1.5 text-xs text-muted-foreground">Prioridade<select className="min-h-[38px] w-full rounded-md border border-border bg-card px-2 text-[13px] text-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-75" value={viewingTask.priority} disabled={isReadOnly} onChange={(event) => void updateTask(viewingTask, { priority: event.target.value as Priority })}><option value="low">Baixa</option><option value="medium">Média</option><option value="high">Alta</option></select></label>
+                  <label className="grid gap-1.5 text-xs text-muted-foreground">Prazo<input className="min-h-[38px] w-full rounded-md border border-border bg-card px-2 text-[13px] text-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-75" type="date" value={viewingTask.due_date || ""} disabled={isReadOnly} onChange={(event) => void updateTask(viewingTask, { due_date: event.target.value })} /></label>
+                  <div className="grid gap-2 text-xs text-muted-foreground"><span>Etiquetas</span><LabelSelector labels={labels} selectedIDs={viewingTask.label_ids || []} onChange={(ids) => void updateTask(viewingTask, { label_ids: ids })} onCreateLabel={createLabel} disabled={isReadOnly} /></div>
                 </aside>
               </div>
             ) : null}

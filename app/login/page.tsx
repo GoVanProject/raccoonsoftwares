@@ -57,9 +57,9 @@ export default function LoginPage() {
         </p>
       }
     >
-      <form className="auth-v2-form" onSubmit={handleSubmit}>
-        <div>
-          <Label htmlFor="login-email">Email</Label>
+      <form className="grid gap-4" onSubmit={handleSubmit}>
+        <div className="grid gap-2">
+          <Label className="text-xs font-bold text-foreground" htmlFor="login-email">Email</Label>
           <Input
             id="login-email"
             type="email"
@@ -70,8 +70,8 @@ export default function LoginPage() {
             required
           />
         </div>
-        <div>
-          <Label htmlFor="login-password">Senha</Label>
+        <div className="grid gap-2">
+          <Label className="text-xs font-bold text-foreground" htmlFor="login-password">Senha</Label>
           <Input
             id="login-password"
             type="password"
@@ -83,12 +83,12 @@ export default function LoginPage() {
           />
         </div>
         {error ? (
-          <p className="auth-v2-error" role="alert">
+          <p className="m-0 rounded-lg border border-destructive/25 bg-destructive/10 p-3 text-[13px] text-destructive" role="alert">
             {error}
           </p>
         ) : null}
         <ShimmerButton
-          className="auth-v2-submit"
+          className="mt-1 w-full min-h-11 text-sm font-bold"
           type="submit"
           disabled={loading}
           aria-busy={loading}

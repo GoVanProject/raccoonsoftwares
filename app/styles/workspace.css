@@ -1418,28 +1418,6 @@ html[data-theme="dark"] .workspace-v2-shell { background: hsl(var(--background))
   .workspace-v2-content > .workspace-page { min-height: calc(100dvh - 64px); }
 }
 
-/* Product UI refinement: aligns legacy route markup with the v2 primitives. */
-.auth-v2-form > div > label,
-.auth-v2-passwords label {
-  color: hsl(var(--foreground));
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.auth-v2-form input {
-  min-height: 48px;
-  border-color: hsl(var(--border));
-  border-radius: 12px;
-  background: hsl(var(--card));
-  box-shadow: 0 1px 2px hsl(var(--foreground) / .04);
-}
-
-.auth-v2-form input:hover { border-color: hsl(var(--foreground) / .24); }
-.auth-v2-form input:focus-visible {
-  border-color: hsl(var(--ring));
-  box-shadow: 0 0 0 4px hsl(var(--ring) / .14);
-}
-
 .workspace-project-switcher {
   display: flex;
   width: 44px;

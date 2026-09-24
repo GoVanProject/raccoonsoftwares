@@ -108,9 +108,9 @@ export default function RegisterPage() {
         </p>
       }
     >
-      <form className="auth-v2-form" onSubmit={handleSubmit}>
-        <div>
-          <Label htmlFor="register-alias">Nome ou alias</Label>
+      <form className="grid gap-4" onSubmit={handleSubmit}>
+        <div className="grid gap-2">
+          <Label className="text-xs font-bold text-foreground" htmlFor="register-alias">Nome ou alias</Label>
           <Input
             id="register-alias"
             type="text"
@@ -122,8 +122,8 @@ export default function RegisterPage() {
             required
           />
         </div>
-        <div>
-          <Label htmlFor="register-email">Email</Label>
+        <div className="grid gap-2">
+          <Label className="text-xs font-bold text-foreground" htmlFor="register-email">Email</Label>
           <Input
             id="register-email"
             type="email"
@@ -134,9 +134,9 @@ export default function RegisterPage() {
             required
           />
         </div>
-        <div className="auth-v2-passwords">
-          <div>
-            <Label htmlFor="register-password">Senha</Label>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid min-w-0 gap-2">
+            <Label className="text-xs font-bold text-foreground" htmlFor="register-password">Senha</Label>
             <Input
               id="register-password"
               type="password"
@@ -148,8 +148,8 @@ export default function RegisterPage() {
               required
             />
           </div>
-          <div>
-            <Label htmlFor="register-confirmation">Confirmar senha</Label>
+          <div className="grid min-w-0 gap-2">
+            <Label className="text-xs font-bold text-foreground" htmlFor="register-confirmation">Confirmar senha</Label>
             <Input
               id="register-confirmation"
               type="password"
@@ -162,26 +162,26 @@ export default function RegisterPage() {
             />
           </div>
         </div>
-        <div className="auth-v2-avatar">
-          <div>
-            <Label htmlFor="register-avatar">
+        <div className="grid gap-2.5">
+          <div className="flex items-baseline justify-between gap-3">
+            <Label className="text-xs font-bold text-foreground" htmlFor="register-avatar">
               Foto do perfil <small>Opcional</small>
             </Label>
-            <span>GIF, PNG ou JPG · até 512 KB</span>
+            <span className="text-[11px] text-muted-foreground">GIF, PNG ou JPG · até 512 KB</span>
           </div>
           {avatarData ? (
-            <div className="auth-v2-preview">
-              <Image src={avatarData} alt="Prévia da foto do perfil" width={48} height={48} unoptimized />
-              <span>{avatarName}</span>
-              <button type="button" onClick={removeAvatar}>
+            <div className="grid grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-xl border border-border p-2">
+              <Image className="size-10 rounded-lg object-cover" src={avatarData} alt="Prévia da foto do perfil" width={48} height={48} unoptimized />
+              <span className="overflow-hidden text-xs text-ellipsis whitespace-nowrap">{avatarName}</span>
+              <button className="border-0 bg-transparent text-xs font-semibold text-destructive" type="button" onClick={removeAvatar}>
                 Remover
               </button>
             </div>
           ) : (
-            <label className="auth-v2-upload" htmlFor="register-avatar">
+            <label className="relative flex min-h-[52px] cursor-pointer items-center justify-between gap-3 rounded-xl border border-dashed border-input px-3.5 py-3" htmlFor="register-avatar">
               <span>Adicionar foto</span>
               <small>Escolher arquivo</small>
-              <input
+              <input className="absolute size-px overflow-hidden opacity-0"
                 id="register-avatar"
                 ref={avatarInput}
                 type="file"
@@ -192,12 +192,12 @@ export default function RegisterPage() {
           )}
         </div>
         {error ? (
-          <p className="auth-v2-error" role="alert">
+          <p className="m-0 rounded-lg border border-destructive/25 bg-destructive/10 p-3 text-[13px] text-destructive" role="alert">
             {error}
           </p>
         ) : null}
         <ShimmerButton
-          className="auth-v2-submit"
+          className="mt-1 w-full min-h-11 text-sm font-bold"
           type="submit"
           disabled={loading}
           aria-busy={loading}

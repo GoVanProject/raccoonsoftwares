@@ -7,8 +7,6 @@ import "./styles/landing.css";
 import "./styles/workspace-overrides.css";
 import "./styles/tailwind.css";
 import "./styles/workspace-v2.css";
-import "./task-labels.css";
-import "./workspace-interactions.css";
 import "leaflet/dist/leaflet.css";
 import { Providers } from "./providers";
 
