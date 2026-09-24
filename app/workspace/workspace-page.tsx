@@ -928,17 +928,17 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
   }
 
   return (
-    <main className="workspace-page">
-      <div className="workspace-layout">
+    <main className="workspace-page min-h-dvh overflow-x-clip bg-background text-foreground">
+      <div className="relative min-h-dvh">
         <section
-          className={`workspace-main ${!projectId ? "workspace-selection-main" : ""}`}
+          className={cn("min-w-0 min-h-dvh w-full overflow-x-hidden px-4 pb-16 pt-6 sm:px-6 sm:pt-8 lg:px-10 lg:pt-12", !projectId && "grid items-start")}
         >
           {error ? (
             <div className="workspace-error" role="alert">
               {error}
-              <button type="button" onClick={() => setError("")}>
+              <Button variant="ghost" size="icon" className="size-8" type="button" onClick={() => setError("")}>
                 <WorkspaceIcon name="close" />
-              </button>
+              </Button>
             </div>
           ) : null}
           {!projectId ? (
@@ -987,9 +987,10 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                         gradientTo="hsl(var(--ring))"
                         gradientOpacity={0.18}
                       >
-                        <button
+                        <Button
+                          variant="ghost"
                           ref={projectDialogTriggerRef}
-                          className="workspace-selection-card"
+                          className="workspace-selection-card h-auto w-full justify-between rounded-[inherit] text-left"
                           type="button"
                           onClick={() =>
                             router.push(`/workspace/${project.id}`)
@@ -1010,7 +1011,7 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                             </small>
                           </span>
                           <WorkspaceIcon name="chevron" />
-                        </button>
+                        </Button>
                       </MagicCard>
                     ))}
                   </div>
@@ -1171,13 +1172,15 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                         >
                           Sala ao vivo
                         </Link>
-                        <button
+                        <Button
+                          variant="outline"
+                          size="sm"
                           className="edit-trigger"
                           type="button"
                           onClick={startProjectEdit}
                         >
                           Editar projeto
-                        </button>
+                        </Button>
                       </div>
                     </div>
                     <div className="member-stack">
@@ -1240,14 +1243,15 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                     <WorkspaceIcon name="plus" />
                     Nova tarefa
                   </ShimmerButton>
-                  <button
+                  <Button
+                    variant="outline"
                     className="workspace-secondary-action"
                     type="button"
                     onClick={openTeamView}
                   >
                     <WorkspaceIcon name="users" />
                     Equipe
-                  </button>
+                  </Button>
                 </div>
               </div>
               {view === "summary" ? (
@@ -1305,11 +1309,11 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                   </button>
                 ) : null}
               </div>
-              <div className="grid grid-flow-col auto-cols-[minmax(280px,1fr)] gap-4 overflow-x-auto pb-2 xl:grid-flow-row xl:grid-cols-4 xl:auto-cols-auto">
+              <div className="grid min-w-0 grid-flow-col auto-cols-[minmax(280px,1fr)] gap-4 overflow-x-auto pb-2 xl:grid-flow-row xl:grid-cols-4 xl:auto-cols-auto">
                 {columns.map((column) => (
                   <section
                     className={cn(
-                      "min-h-[420px] rounded-2xl border border-border bg-secondary/70 p-3 transition-[background,border-color,box-shadow] duration-300",
+                      "min-h-[420px] min-w-0 w-full max-w-full overflow-hidden rounded-2xl border border-border bg-secondary/70 p-3 transition-[background,border-color,box-shadow] duration-300",
                       dragOverStatus === column.status && "border-primary bg-primary/5 shadow-[0_0_0_3px_hsl(var(--primary)/0.15)]",
                     )}
                     key={column.status}
@@ -1330,7 +1334,7 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                       {groupedTasks[column.status].map((task) => (
                         <article
                           className={cn(
-                            "rounded-xl border border-border bg-card p-4 shadow-sm transition-[transform,border-color,box-shadow,opacity] duration-300 hover:-translate-y-0.5 hover:border-input hover:shadow-md focus-within:-translate-y-0.5 focus-within:border-input focus-within:shadow-md",
+                            "min-w-0 w-full max-w-full overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm transition-[transform,border-color,box-shadow,opacity] duration-300 hover:-translate-y-0.5 hover:border-input hover:shadow-md focus-within:-translate-y-0.5 focus-within:border-input focus-within:shadow-md",
                             !isReadOnly && "cursor-grab active:cursor-grabbing",
                             draggedTaskId === task.id && "rotate-1 scale-[0.98] opacity-55",
                             movingTaskId === task.id && "pointer-events-none opacity-65",
@@ -1366,14 +1370,16 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                                 </option>
                                 <option value="done">Concluído</option>
                               </select>
-                              <button
-                                className="inline-flex h-10 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary px-3 text-xs font-semibold text-foreground transition-colors hover:border-primary hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-10 shrink-0 rounded-lg px-3 text-xs"
                                 type="button"
                                 onClick={() => startTaskEdit(task)}
                                 disabled={isReadOnly}
                               >
                                 Editar
-                              </button>
+                              </Button>
                             </div>
                           </div>
                           <button
@@ -1572,8 +1578,8 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
         {taskModal ? (
           <DialogContent
             className={cn(
-              "!fixed !left-1/2 !top-1/2 !-translate-x-1/2 !-translate-y-1/2 max-h-[calc(100dvh-20px)] w-[calc(100vw-20px)] gap-0 overflow-y-auto rounded-2xl p-4 sm:max-h-[calc(100dvh-40px)] sm:w-[calc(100vw-48px)] sm:p-6",
-              taskModal === "view" ? "max-w-[1180px]" : "max-w-2xl",
+              "!fixed !left-1/2 !top-1/2 !-translate-x-1/2 !-translate-y-1/2 !w-[calc(100vw-32px)] max-h-[calc(100dvh-20px)] gap-0 overflow-x-hidden overflow-y-auto rounded-2xl p-4 sm:max-h-[calc(100dvh-40px)] sm:p-6",
+              taskModal === "view" ? "!max-w-[1180px]" : "!max-w-2xl",
             )}
             showCloseButton={false}
             aria-labelledby="workspace-task-modal-title"
