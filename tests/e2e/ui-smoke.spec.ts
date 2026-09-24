@@ -74,6 +74,26 @@ async function mockWorkspace(page: Page) {
         json: { task: { ...tasks[0], ...changes } },
       });
     }
+    if (path.endsWith("/comments")) {
+      if (route.request().method() === "POST") {
+        const body = route.request().postDataJSON() as { body: string };
+        return route.fulfill({ json: { comment: { id: "comment-1", task_id: tasks[0].id, author_id: user.id, body: body.body, created_at: "2026-09-24T12:00:00Z" } } });
+      }
+      return route.fulfill({ json: { comments: [] } });
+    }
+    if (path.endsWith("/subtasks")) {
+      if (route.request().method() === "POST") {
+        const body = route.request().postDataJSON() as { title: string };
+        return route.fulfill({ json: { subtask: { id: "subtask-1", task_id: tasks[0].id, title: body.title, done: false, position: 0, created_at: "2026-09-24T12:00:00Z" } } });
+      }
+      return route.fulfill({ json: { subtasks: [] } });
+    }
+    if (path.endsWith("/attachments")) {
+      if (route.request().method() === "POST") {
+        return route.fulfill({ json: { attachment: { id: "attachment-1", task_id: tasks[0].id, name: "brief.txt", content_type: "text/plain", size: 12, created_by: user.id, created_at: "2026-09-24T12:00:00Z" } } });
+      }
+      return route.fulfill({ json: { attachments: [] } });
+    }
     if (path.endsWith("/tasks")) return route.fulfill({ json: { tasks } });
     if (path.endsWith("/members")) return route.fulfill({ json: { members } });
     if (path.endsWith("/labels")) return route.fulfill({ json: { labels } });
@@ -141,6 +161,38 @@ test("workspace vazio/populado, rail e dialog com foco", async ({ page }) => {
     path: `docs/ui-audit/after/board-${test.info().project.name}.png`,
     fullPage: true,
   });
+});
+
+test("visões de resumo, backlog e quadro ficam acessíveis pelo seletor do projeto", async ({ page }) => {
+  await mockWorkspace(page);
+  await page.goto("/workspace/project-1/summary");
+  await expect(page.getByRole("link", { name: "Resumo" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { name: "Tarefas por etapa" })).toBeVisible();
+  await page.getByRole("link", { name: "Backlog" }).click();
+  await expect(page.getByRole("link", { name: "Backlog" })).toHaveAttribute("aria-current", "page");
+  await expect(page.locator(".backlog-task-row")).toHaveCount(2);
+  await page.locator(".project-view-tabs").getByRole("link", { name: "Quadro", exact: true }).click();
+  await expect(page.locator(".project-view-tabs").getByRole("link", { name: "Quadro", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page.locator(".kanban-grid")).toBeVisible();
+  await expectNoDocumentOverflow(page);
+});
+
+test("detalhes da tarefa aceitam anexos, subtarefas e comentários", async ({ page }) => {
+  await mockWorkspace(page);
+  await page.goto("/workspace/project-1/backlog");
+  await page.locator(".backlog-task-row").first().click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "Anexos" })).toBeVisible();
+  await dialog.getByLabel("Nova subtarefa").fill("Revisar checklist");
+  await dialog.getByRole("button", { name: "Adicionar", exact: true }).click();
+  await expect(dialog.getByText("Revisar checklist")).toBeVisible();
+  await dialog.getByLabel("Novo comentário").fill("Validação concluída.");
+  await dialog.getByRole("button", { name: "Comentar" }).click();
+  await expect(dialog.getByText("Validação concluída.")).toBeVisible();
+  await dialog.locator('input[type="file"][aria-label="Adicionar anexo à tarefa"]').setInputFiles({ name: "brief.txt", mimeType: "text/plain", buffer: Buffer.from("referência") });
+  await expect(dialog.getByText("brief.txt")).toBeVisible();
+  await expectNoDocumentOverflow(page);
 });
 
 test("rotas de equipe, prospecção, sala e perfil carregam sem overflow", async ({ page }) => {

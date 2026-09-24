@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +21,7 @@ var (
 	ErrNotMember     = errors.New("usuário não pertence ao projeto")
 	ErrOwnerRequired = errors.New("somente o proprietário pode realizar esta ação")
 	ErrReadOnly      = errors.New("este membro tem permissão somente para visualização")
+	ErrNotAuthor     = errors.New("somente o autor pode remover este comentário")
 )
 
 const (
@@ -67,6 +69,35 @@ type Task struct {
 	CreatedBy   string    `json:"created_by"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type TaskComment struct {
+	ID        string    `json:"id"`
+	TaskID    string    `json:"task_id"`
+	AuthorID  string    `json:"author_id"`
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type TaskSubtask struct {
+	ID        string    `json:"id"`
+	TaskID    string    `json:"task_id"`
+	Title     string    `json:"title"`
+	Done      bool      `json:"done"`
+	Position  int       `json:"position"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type TaskAttachment struct {
+	ID          string    `json:"id"`
+	TaskID      string    `json:"task_id"`
+	Name        string    `json:"name"`
+	ContentType string    `json:"content_type"`
+	Size        int64     `json:"size"`
+	CreatedBy   string    `json:"created_by"`
+	CreatedAt   time.Time `json:"created_at"`
+	Data        []byte    `json:"data,omitempty"`
 }
 
 type Label struct {
@@ -166,12 +197,15 @@ type LeadImport struct {
 }
 
 type data struct {
-	Users          map[string]User         `json:"users"`
-	Projects       map[string]Project      `json:"projects"`
-	Tasks          map[string]Task         `json:"tasks"`
-	Labels         map[string]Label        `json:"labels"`
-	Leads          map[string]Lead         `json:"leads"`
-	LeadActivities map[string]LeadActivity `json:"lead_activities"`
+	Users           map[string]User           `json:"users"`
+	Projects        map[string]Project        `json:"projects"`
+	Tasks           map[string]Task           `json:"tasks"`
+	Labels          map[string]Label          `json:"labels"`
+	Leads           map[string]Lead           `json:"leads"`
+	LeadActivities  map[string]LeadActivity   `json:"lead_activities"`
+	TaskComments    map[string]TaskComment    `json:"task_comments"`
+	TaskSubtasks    map[string]TaskSubtask    `json:"task_subtasks"`
+	TaskAttachments map[string]TaskAttachment `json:"task_attachments"`
 }
 
 type Store struct {
@@ -205,6 +239,17 @@ type Repository interface {
 	TaskByID(id string) (Task, error)
 	UpdateTask(id, actorID, title, description, status, priority, assigneeID, dueDate string, labelIDs []string) (Task, error)
 	DeleteTask(id, actorID string) error
+	TaskComments(taskID string) ([]TaskComment, error)
+	CreateTaskComment(taskID, authorID, body string) (TaskComment, error)
+	DeleteTaskComment(commentID, actorID string) error
+	TaskSubtasks(taskID string) ([]TaskSubtask, error)
+	CreateTaskSubtask(taskID, actorID, title string) (TaskSubtask, error)
+	UpdateTaskSubtask(id, actorID string, title *string, done *bool) (TaskSubtask, error)
+	DeleteTaskSubtask(id, actorID string) error
+	TaskAttachments(taskID string) ([]TaskAttachment, error)
+	CreateTaskAttachment(taskID, actorID, name, contentType string, content []byte) (TaskAttachment, error)
+	TaskAttachmentByID(id string) (TaskAttachment, error)
+	DeleteTaskAttachment(id, actorID string) error
 	ListLeads(projectID string, filters LeadFilters) []Lead
 	CreateLead(projectID, creatorID string, lead Lead) (Lead, error)
 	ImportLeads(projectID, creatorID string, leads []LeadImport) (created []Lead, skipped int, err error)
@@ -220,12 +265,15 @@ func New(path string) (*Store, error) {
 		return nil, errors.New("caminho do armazenamento vazio")
 	}
 	s := &Store{path: path, data: data{
-		Users:          make(map[string]User),
-		Projects:       make(map[string]Project),
-		Tasks:          make(map[string]Task),
-		Labels:         make(map[string]Label),
-		Leads:          make(map[string]Lead),
-		LeadActivities: make(map[string]LeadActivity),
+		Users:           make(map[string]User),
+		Projects:        make(map[string]Project),
+		Tasks:           make(map[string]Task),
+		Labels:          make(map[string]Label),
+		Leads:           make(map[string]Lead),
+		LeadActivities:  make(map[string]LeadActivity),
+		TaskComments:    make(map[string]TaskComment),
+		TaskSubtasks:    make(map[string]TaskSubtask),
+		TaskAttachments: make(map[string]TaskAttachment),
 	}}
 	contents, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -260,6 +308,15 @@ func New(path string) (*Store, error) {
 	}
 	if s.data.LeadActivities == nil {
 		s.data.LeadActivities = make(map[string]LeadActivity)
+	}
+	if s.data.TaskComments == nil {
+		s.data.TaskComments = make(map[string]TaskComment)
+	}
+	if s.data.TaskSubtasks == nil {
+		s.data.TaskSubtasks = make(map[string]TaskSubtask)
+	}
+	if s.data.TaskAttachments == nil {
+		s.data.TaskAttachments = make(map[string]TaskAttachment)
 	}
 	return s, nil
 }
@@ -415,6 +472,7 @@ func (s *Store) DeleteProject(id, actorID string) error {
 	for taskID, task := range s.data.Tasks {
 		if task.ProjectID == id {
 			delete(s.data.Tasks, taskID)
+			s.deleteTaskDetailsLocked(taskID)
 		}
 	}
 	for labelID, label := range s.data.Labels {
@@ -720,6 +778,212 @@ func (s *Store) DeleteTask(id, actorID string) error {
 		return ErrReadOnly
 	}
 	delete(s.data.Tasks, id)
+	s.deleteTaskDetailsLocked(id)
+	return s.persistLocked()
+}
+
+func (s *Store) deleteTaskDetailsLocked(taskID string) {
+	for id, item := range s.data.TaskComments {
+		if item.TaskID == taskID {
+			delete(s.data.TaskComments, id)
+		}
+	}
+	for id, item := range s.data.TaskSubtasks {
+		if item.TaskID == taskID {
+			delete(s.data.TaskSubtasks, id)
+		}
+	}
+	for id, item := range s.data.TaskAttachments {
+		if item.TaskID == taskID {
+			delete(s.data.TaskAttachments, id)
+		}
+	}
+}
+
+func (s *Store) taskAccessLocked(taskID, actorID string, write bool) error {
+	task, ok := s.data.Tasks[taskID]
+	if !ok {
+		return ErrNotFound
+	}
+	project, ok := s.data.Projects[task.ProjectID]
+	if !ok {
+		return ErrNotFound
+	}
+	if !contains(project.MemberIDs, actorID) {
+		return ErrNotMember
+	}
+	if write && memberRole(project, actorID) == MemberRoleViewer {
+		return ErrReadOnly
+	}
+	return nil
+}
+
+func (s *Store) TaskComments(taskID string) ([]TaskComment, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if _, ok := s.data.Tasks[taskID]; !ok {
+		return nil, ErrNotFound
+	}
+	items := make([]TaskComment, 0)
+	for _, item := range s.data.TaskComments {
+		if item.TaskID == taskID {
+			items = append(items, item)
+		}
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.Before(items[j].CreatedAt) })
+	return items, nil
+}
+
+func (s *Store) CreateTaskComment(taskID, authorID, body string) (TaskComment, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.taskAccessLocked(taskID, authorID, true); err != nil {
+		return TaskComment{}, err
+	}
+	item := TaskComment{ID: newID(), TaskID: taskID, AuthorID: authorID, Body: body, CreatedAt: time.Now().UTC()}
+	s.data.TaskComments[item.ID] = item
+	return item, s.persistLocked()
+}
+
+func (s *Store) DeleteTaskComment(commentID, actorID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.data.TaskComments[commentID]
+	if !ok {
+		return ErrNotFound
+	}
+	if err := s.taskAccessLocked(item.TaskID, actorID, true); err != nil {
+		return err
+	}
+	if item.AuthorID != actorID {
+		return ErrNotAuthor
+	}
+	delete(s.data.TaskComments, commentID)
+	return s.persistLocked()
+}
+
+func (s *Store) TaskSubtasks(taskID string) ([]TaskSubtask, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if _, ok := s.data.Tasks[taskID]; !ok {
+		return nil, ErrNotFound
+	}
+	items := make([]TaskSubtask, 0)
+	for _, item := range s.data.TaskSubtasks {
+		if item.TaskID == taskID {
+			items = append(items, item)
+		}
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Position == items[j].Position {
+			return items[i].CreatedAt.Before(items[j].CreatedAt)
+		}
+		return items[i].Position < items[j].Position
+	})
+	return items, nil
+}
+
+func (s *Store) CreateTaskSubtask(taskID, actorID, title string) (TaskSubtask, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.taskAccessLocked(taskID, actorID, true); err != nil {
+		return TaskSubtask{}, err
+	}
+	position := 0
+	for _, item := range s.data.TaskSubtasks {
+		if item.TaskID == taskID && item.Position >= position {
+			position = item.Position + 1
+		}
+	}
+	now := time.Now().UTC()
+	item := TaskSubtask{ID: newID(), TaskID: taskID, Title: title, Position: position, CreatedAt: now, UpdatedAt: now}
+	s.data.TaskSubtasks[item.ID] = item
+	return item, s.persistLocked()
+}
+
+func (s *Store) UpdateTaskSubtask(id, actorID string, title *string, done *bool) (TaskSubtask, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.data.TaskSubtasks[id]
+	if !ok {
+		return TaskSubtask{}, ErrNotFound
+	}
+	if err := s.taskAccessLocked(item.TaskID, actorID, true); err != nil {
+		return TaskSubtask{}, err
+	}
+	if title != nil {
+		item.Title = *title
+	}
+	if done != nil {
+		item.Done = *done
+	}
+	item.UpdatedAt = time.Now().UTC()
+	s.data.TaskSubtasks[id] = item
+	return item, s.persistLocked()
+}
+
+func (s *Store) DeleteTaskSubtask(id, actorID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.data.TaskSubtasks[id]
+	if !ok {
+		return ErrNotFound
+	}
+	if err := s.taskAccessLocked(item.TaskID, actorID, true); err != nil {
+		return err
+	}
+	delete(s.data.TaskSubtasks, id)
+	return s.persistLocked()
+}
+
+func (s *Store) TaskAttachments(taskID string) ([]TaskAttachment, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if _, ok := s.data.Tasks[taskID]; !ok {
+		return nil, ErrNotFound
+	}
+	items := make([]TaskAttachment, 0)
+	for _, item := range s.data.TaskAttachments {
+		if item.TaskID == taskID {
+			items = append(items, item)
+		}
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.Before(items[j].CreatedAt) })
+	return items, nil
+}
+
+func (s *Store) CreateTaskAttachment(taskID, actorID, name, contentType string, content []byte) (TaskAttachment, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.taskAccessLocked(taskID, actorID, true); err != nil {
+		return TaskAttachment{}, err
+	}
+	item := TaskAttachment{ID: newID(), TaskID: taskID, Name: name, ContentType: contentType, Size: int64(len(content)), CreatedBy: actorID, CreatedAt: time.Now().UTC(), Data: append([]byte(nil), content...)}
+	s.data.TaskAttachments[item.ID] = item
+	return item, s.persistLocked()
+}
+
+func (s *Store) TaskAttachmentByID(id string) (TaskAttachment, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	item, ok := s.data.TaskAttachments[id]
+	if !ok {
+		return TaskAttachment{}, ErrNotFound
+	}
+	return item, nil
+}
+
+func (s *Store) DeleteTaskAttachment(id, actorID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.data.TaskAttachments[id]
+	if !ok {
+		return ErrNotFound
+	}
+	if err := s.taskAccessLocked(item.TaskID, actorID, true); err != nil {
+		return err
+	}
+	delete(s.data.TaskAttachments, id)
 	return s.persistLocked()
 }
 

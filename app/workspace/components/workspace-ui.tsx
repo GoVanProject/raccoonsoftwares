@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { ArrowLeft, ArrowsIn, ArrowsOut, CaretRight, Database, DownloadSimple, Folder, Kanban, List, MapPin, Microphone, MicrophoneSlash, Monitor, Moon, Plus, SignOut, Sun, User, Users, X } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowsIn, ArrowsOut, CaretRight, ChartBar, Database, DownloadSimple, Folder, Kanban, List, ListBullets, MapPin, Microphone, MicrophoneSlash, Monitor, Moon, Plus, SignOut, Sun, User, Users, X } from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { taskboardFetch } from "../../lib/taskboard";
@@ -13,6 +13,8 @@ import { useTaskboardToken } from "../../lib/use-taskboard-token";
 export type WorkspaceIconName =
   | "back"
   | "board"
+  | "summary"
+  | "backlog"
   | "close"
   | "download"
   | "database"
@@ -66,7 +68,7 @@ export function initials(email: string, alias?: string) {
 }
 
 export function WorkspaceIcon({ name }: { name: WorkspaceIconName }) {
-  const icons = { back: ArrowLeft, board: Kanban, close: X, download: DownloadSimple, database: Database, folder: Folder, fullscreen: ArrowsOut, exitFullscreen: ArrowsIn, logout: SignOut, mapPin: MapPin, menu: List, mic: Microphone, micOff: MicrophoneSlash, moon: Moon, profile: User, plus: Plus, screen: Monitor, sun: Sun, users: Users, chevron: CaretRight };
+  const icons = { back: ArrowLeft, board: Kanban, summary: ChartBar, backlog: ListBullets, close: X, download: DownloadSimple, database: Database, folder: Folder, fullscreen: ArrowsOut, exitFullscreen: ArrowsIn, logout: SignOut, mapPin: MapPin, menu: List, mic: Microphone, micOff: MicrophoneSlash, moon: Moon, profile: User, plus: Plus, screen: Monitor, sun: Sun, users: Users, chevron: CaretRight };
   const Icon = icons[name];
   return <Icon className="workspace-icon" aria-hidden="true" weight="regular" />;
 }

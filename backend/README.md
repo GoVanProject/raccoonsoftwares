@@ -65,6 +65,12 @@ Authorization: Bearer <token>
 | `POST` | `/api/projects/:id/tasks` | Criar tarefa |
 | `GET` / `POST` | `/api/projects/:id/labels` | Listar ou criar etiquetas do projeto |
 | `GET` / `PATCH` / `DELETE` | `/api/tasks/:id` | Consultar, editar ou remover tarefa |
+| `GET` / `POST` | `/api/tasks/:id/comments` | Listar ou comentar na tarefa |
+| `DELETE` | `/api/task-comments/:id` | Remover comentário próprio |
+| `GET` / `POST` | `/api/tasks/:id/subtasks` | Listar ou adicionar item de checklist |
+| `PATCH` / `DELETE` | `/api/task-subtasks/:id` | Atualizar ou remover item de checklist |
+| `GET` / `POST` | `/api/tasks/:id/attachments` | Listar ou anexar arquivo via `multipart/form-data`, campo `file` |
+| `GET` / `DELETE` | `/api/task-attachments/:id` | Baixar ou remover anexo |
 
 Status de tarefa: `backlog`, `todo`, `in_progress`, `done`. Prioridades: `low`, `medium`, `high`.
 
@@ -86,6 +92,6 @@ curl -X POST http://localhost:8080/api/projects/<PROJECT_ID>/tasks \
 
 Etiquetas são compartilhadas entre as tarefas do projeto. Crie uma com `name` e uma cor da paleta `blue`, `purple`, `green`, `orange`, `red`, `cyan` ou `gray`. As tarefas retornam seus identificadores no campo `label_ids`; envie esse campo em `POST` ou `PATCH` para definir as etiquetas associadas.
 
-O proprietário do projeto é incluído automaticamente como integrante. Apenas integrantes podem ler e editar tarefas; somente o proprietário gerencia projeto e equipe. Projetos podem ser editados pelo proprietário, e tarefas podem ser editadas por qualquer integrante.
+O proprietário do projeto é incluído automaticamente como integrante. Integrantes podem ler tarefas; somente proprietários e editores podem alterá-las, adicionar comentários ou anexos. Cada autor pode remover seus próprios comentários. Anexos têm limite de 10 MB e são sempre enviados como download. Somente o proprietário gerencia projeto e equipe.
 
 A sala ao vivo é temporária e permite até 10 participantes e duas telas compartilhadas. O backend não recebe nem armazena a mídia: ele apenas autentica a sala e retransmite mensagens de sinalização entre os navegadores.

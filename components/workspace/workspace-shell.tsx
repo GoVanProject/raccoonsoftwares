@@ -20,6 +20,7 @@ function activeSection(pathname: string): WorkspaceSection {
   if (pathname.endsWith("/prospects")) return "prospects";
   if (pathname.endsWith("/room")) return "room";
   if (pathname.endsWith("/profile")) return "profile";
+  if (pathname.endsWith("/summary") || pathname.endsWith("/backlog")) return "board";
   if (/^\/workspace\/[^/]+$/.test(pathname)) return "board";
   return "projects";
 }

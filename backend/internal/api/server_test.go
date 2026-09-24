@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -89,6 +90,124 @@ func TestKanbanFlow(t *testing.T) {
 
 	call(t, handler, http.MethodGet, "/api/projects", "", nil, http.StatusUnauthorized)
 	call(t, handler, http.MethodDelete, "/api/projects/"+projectID, member["token"].(string), nil, http.StatusForbidden)
+}
+
+func TestTaskDetailsResources(t *testing.T) {
+	storePath := t.TempDir() + "/taskboard.json"
+	database, err := store.New(storePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(database, auth.NewTokenService([]byte(strings.Repeat("r", 32)), time.Hour), Config{CORSOrigin: "http://localhost:3000"})
+	handler := server.Handler()
+	owner := call(t, handler, http.MethodPost, "/api/auth/register", "", map[string]any{"email": "details-owner@example.com", "password": "senha-owner"}, http.StatusCreated)
+	viewer := call(t, handler, http.MethodPost, "/api/auth/register", "", map[string]any{"email": "details-viewer@example.com", "password": "senha-viewer"}, http.StatusCreated)
+	outsider := call(t, handler, http.MethodPost, "/api/auth/register", "", map[string]any{"email": "details-outsider@example.com", "password": "senha-outsider"}, http.StatusCreated)
+	ownerToken := owner["token"].(string)
+	viewerToken := viewer["token"].(string)
+	viewerID := viewer["user"].(map[string]any)["id"].(string)
+	project := call(t, handler, http.MethodPost, "/api/projects", ownerToken, map[string]any{"name": "Detalhes"}, http.StatusCreated)
+	projectID := project["project"].(map[string]any)["id"].(string)
+	call(t, handler, http.MethodPost, "/api/projects/"+projectID+"/members", ownerToken, map[string]any{"user_id": viewerID}, http.StatusOK)
+	call(t, handler, http.MethodPatch, "/api/projects/"+projectID+"/members/"+viewerID, ownerToken, map[string]any{"role": "viewer"}, http.StatusOK)
+	task := call(t, handler, http.MethodPost, "/api/projects/"+projectID+"/tasks", ownerToken, map[string]any{"title": "Analisar dados", "status": "todo", "priority": "medium"}, http.StatusCreated)
+	taskID := task["task"].(map[string]any)["id"].(string)
+	comment := call(t, handler, http.MethodPost, "/api/tasks/"+taskID+"/comments", ownerToken, map[string]any{"body": "Amostra pronta."}, http.StatusCreated)
+	commentID := comment["comment"].(map[string]any)["id"].(string)
+	if len(call(t, handler, http.MethodGet, "/api/tasks/"+taskID+"/comments", viewerToken, nil, http.StatusOK)["comments"].([]any)) != 1 {
+		t.Fatal("integrante com acesso de leitura não recebeu o comentário")
+	}
+	call(t, handler, http.MethodPost, "/api/tasks/"+taskID+"/comments", viewerToken, map[string]any{"body": "Alteração negada"}, http.StatusForbidden)
+	call(t, handler, http.MethodDelete, "/api/task-comments/"+commentID, viewerToken, nil, http.StatusForbidden)
+
+	subtask := call(t, handler, http.MethodPost, "/api/tasks/"+taskID+"/subtasks", ownerToken, map[string]any{"title": "Validar amostra"}, http.StatusCreated)
+	subtaskID := subtask["subtask"].(map[string]any)["id"].(string)
+	updated := call(t, handler, http.MethodPatch, "/api/task-subtasks/"+subtaskID, ownerToken, map[string]any{"done": true}, http.StatusOK)
+	if updated["subtask"].(map[string]any)["done"] != true {
+		t.Fatal("estado da subtarefa não foi salvo")
+	}
+	if len(call(t, handler, http.MethodGet, "/api/tasks/"+taskID+"/subtasks", ownerToken, nil, http.StatusOK)["subtasks"].([]any)) != 1 {
+		t.Fatal("subtarefa não foi persistida")
+	}
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, err := writer.CreateFormFile("file", "brief.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write([]byte("arquivo de referência")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/tasks/"+taskID+"/attachments", body)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	request.Header.Set("Authorization", "Bearer "+ownerToken)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("upload status = %d, body = %s", response.Code, response.Body.String())
+	}
+	var upload struct {
+		Attachment struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+			Size int64  `json:"size"`
+		} `json:"attachment"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &upload); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(response.Body.String(), `"data"`) {
+		t.Fatal("resposta de upload não deve incluir o conteúdo do anexo")
+	}
+	if upload.Attachment.Name != "brief.txt" || upload.Attachment.Size != int64(len("arquivo de referência")) {
+		t.Fatalf("metadados do anexo incorretos: %#v", upload.Attachment)
+	}
+	reopenedStore, err := store.New(storePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persistedAttachment, err := reopenedStore.TaskAttachmentByID(upload.Attachment.ID)
+	if err != nil || string(persistedAttachment.Data) != "arquivo de referência" {
+		t.Fatalf("conteúdo do anexo não sobreviveu à reabertura do armazenamento: item=%#v erro=%v", persistedAttachment, err)
+	}
+
+	download := httptest.NewRequest(http.MethodGet, "/api/task-attachments/"+upload.Attachment.ID, nil)
+	download.Header.Set("Authorization", "Bearer "+ownerToken)
+	downloadResponse := httptest.NewRecorder()
+	handler.ServeHTTP(downloadResponse, download)
+	if downloadResponse.Code != http.StatusOK || downloadResponse.Body.String() != "arquivo de referência" || !strings.Contains(downloadResponse.Header().Get("Content-Disposition"), "attachment") {
+		t.Fatalf("download incorreto: status=%d headers=%v body=%q", downloadResponse.Code, downloadResponse.Header(), downloadResponse.Body.String())
+	}
+	largeBody := &bytes.Buffer{}
+	largeWriter := multipart.NewWriter(largeBody)
+	largePart, err := largeWriter.CreateFormFile("file", "grande.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := largePart.Write(bytes.Repeat([]byte("x"), maxTaskAttachmentBytes+1)); err != nil {
+		t.Fatal(err)
+	}
+	if err := largeWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	largeRequest := httptest.NewRequest(http.MethodPost, "/api/tasks/"+taskID+"/attachments", largeBody)
+	largeRequest.Header.Set("Content-Type", largeWriter.FormDataContentType())
+	largeRequest.Header.Set("Authorization", "Bearer "+ownerToken)
+	largeResponse := httptest.NewRecorder()
+	handler.ServeHTTP(largeResponse, largeRequest)
+	if largeResponse.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("arquivo acima do limite retornou %d, corpo: %s", largeResponse.Code, largeResponse.Body.String())
+	}
+	call(t, handler, http.MethodGet, "/api/task-attachments/"+upload.Attachment.ID, outsider["token"].(string), nil, http.StatusForbidden)
+	call(t, handler, http.MethodDelete, "/api/task-attachments/"+upload.Attachment.ID, viewerToken, nil, http.StatusForbidden)
+	call(t, handler, http.MethodDelete, "/api/task-attachments/"+upload.Attachment.ID, ownerToken, nil, http.StatusNoContent)
+	call(t, handler, http.MethodDelete, "/api/task-subtasks/"+subtaskID, ownerToken, nil, http.StatusNoContent)
+	call(t, handler, http.MethodDelete, "/api/tasks/"+taskID, ownerToken, nil, http.StatusNoContent)
+	call(t, handler, http.MethodGet, "/api/tasks/"+taskID+"/comments", ownerToken, nil, http.StatusNotFound)
 }
 
 func TestLeadPipelineFlow(t *testing.T) {

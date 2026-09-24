@@ -111,6 +111,35 @@ CREATE TABLE IF NOT EXISTS task_labels (
     PRIMARY KEY (task_id, label_id)
 );
 CREATE INDEX IF NOT EXISTS project_members_user_id_idx ON project_members (user_id);
+CREATE TABLE IF NOT EXISTS task_comments (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    author_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    body TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS task_comments_task_id_idx ON task_comments (task_id, created_at);
+CREATE TABLE IF NOT EXISTS task_subtasks (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    done BOOLEAN NOT NULL DEFAULT FALSE,
+    position INTEGER NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS task_subtasks_task_id_idx ON task_subtasks (task_id, position, created_at);
+CREATE TABLE IF NOT EXISTS task_attachments (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    content_type TEXT NOT NULL,
+    size BIGINT NOT NULL,
+    created_by TEXT NOT NULL REFERENCES users(id),
+    content BYTEA NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS task_attachments_task_id_idx ON task_attachments (task_id, created_at);
 
 CREATE TABLE IF NOT EXISTS restaurant_leads (
     id TEXT PRIMARY KEY,
@@ -1025,5 +1054,185 @@ func (s *PostgresStore) DeleteTask(id, actorID string) error {
 		return ErrReadOnly
 	}
 	_, err = s.pool.Exec(context.Background(), `DELETE FROM tasks WHERE id = $1`, id)
+	return translatePostgresError(err)
+}
+
+func (s *PostgresStore) taskProjectID(taskID string) (string, error) {
+	var projectID string
+	err := s.pool.QueryRow(context.Background(), `SELECT project_id FROM tasks WHERE id = $1`, taskID).Scan(&projectID)
+	return projectID, translatePostgresError(err)
+}
+
+func (s *PostgresStore) taskWriteAccess(taskID, actorID string) error {
+	projectID, err := s.taskProjectID(taskID)
+	if err != nil {
+		return err
+	}
+	if !s.projectMemberExists(projectID, actorID) {
+		return ErrNotMember
+	}
+	role, err := s.projectMemberRole(projectID, actorID)
+	if err != nil {
+		return err
+	}
+	if role == MemberRoleViewer {
+		return ErrReadOnly
+	}
+	return nil
+}
+
+func (s *PostgresStore) TaskComments(taskID string) ([]TaskComment, error) {
+	if _, err := s.taskProjectID(taskID); err != nil {
+		return nil, err
+	}
+	rows, err := s.pool.Query(context.Background(), `SELECT id, task_id, author_id, body, created_at FROM task_comments WHERE task_id = $1 ORDER BY created_at, id`, taskID)
+	if err != nil {
+		return nil, translatePostgresError(err)
+	}
+	defer rows.Close()
+	items := make([]TaskComment, 0)
+	for rows.Next() {
+		var item TaskComment
+		if err := rows.Scan(&item.ID, &item.TaskID, &item.AuthorID, &item.Body, &item.CreatedAt); err != nil {
+			return nil, translatePostgresError(err)
+		}
+		items = append(items, item)
+	}
+	return items, translatePostgresError(rows.Err())
+}
+
+func (s *PostgresStore) CreateTaskComment(taskID, authorID, body string) (TaskComment, error) {
+	if err := s.taskWriteAccess(taskID, authorID); err != nil {
+		return TaskComment{}, err
+	}
+	item := TaskComment{ID: newID(), TaskID: taskID, AuthorID: authorID, Body: body, CreatedAt: time.Now().UTC()}
+	_, err := s.pool.Exec(context.Background(), `INSERT INTO task_comments (id, task_id, author_id, body, created_at) VALUES ($1, $2, $3, $4, $5)`, item.ID, item.TaskID, item.AuthorID, item.Body, item.CreatedAt)
+	return item, translatePostgresError(err)
+}
+
+func (s *PostgresStore) DeleteTaskComment(commentID, actorID string) error {
+	var taskID, authorID string
+	if err := s.pool.QueryRow(context.Background(), `SELECT task_id, author_id FROM task_comments WHERE id = $1`, commentID).Scan(&taskID, &authorID); err != nil {
+		return translatePostgresError(err)
+	}
+	if err := s.taskWriteAccess(taskID, actorID); err != nil {
+		return err
+	}
+	if authorID != actorID {
+		return ErrNotAuthor
+	}
+	_, err := s.pool.Exec(context.Background(), `DELETE FROM task_comments WHERE id = $1`, commentID)
+	return translatePostgresError(err)
+}
+
+func (s *PostgresStore) TaskSubtasks(taskID string) ([]TaskSubtask, error) {
+	if _, err := s.taskProjectID(taskID); err != nil {
+		return nil, err
+	}
+	rows, err := s.pool.Query(context.Background(), `SELECT id, task_id, title, done, position, created_at, updated_at FROM task_subtasks WHERE task_id = $1 ORDER BY position, created_at, id`, taskID)
+	if err != nil {
+		return nil, translatePostgresError(err)
+	}
+	defer rows.Close()
+	items := make([]TaskSubtask, 0)
+	for rows.Next() {
+		var item TaskSubtask
+		if err := rows.Scan(&item.ID, &item.TaskID, &item.Title, &item.Done, &item.Position, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			return nil, translatePostgresError(err)
+		}
+		items = append(items, item)
+	}
+	return items, translatePostgresError(rows.Err())
+}
+
+func (s *PostgresStore) CreateTaskSubtask(taskID, actorID, title string) (TaskSubtask, error) {
+	if err := s.taskWriteAccess(taskID, actorID); err != nil {
+		return TaskSubtask{}, err
+	}
+	var position int
+	if err := s.pool.QueryRow(context.Background(), `SELECT COALESCE(MAX(position) + 1, 0) FROM task_subtasks WHERE task_id = $1`, taskID).Scan(&position); err != nil {
+		return TaskSubtask{}, translatePostgresError(err)
+	}
+	now := time.Now().UTC()
+	item := TaskSubtask{ID: newID(), TaskID: taskID, Title: title, Position: position, CreatedAt: now, UpdatedAt: now}
+	_, err := s.pool.Exec(context.Background(), `INSERT INTO task_subtasks (id, task_id, title, done, position, created_at, updated_at) VALUES ($1, $2, $3, FALSE, $4, $5, $5)`, item.ID, item.TaskID, item.Title, item.Position, now)
+	return item, translatePostgresError(err)
+}
+
+func (s *PostgresStore) UpdateTaskSubtask(id, actorID string, title *string, done *bool) (TaskSubtask, error) {
+	var item TaskSubtask
+	if err := s.pool.QueryRow(context.Background(), `SELECT id, task_id, title, done, position, created_at, updated_at FROM task_subtasks WHERE id = $1`, id).Scan(&item.ID, &item.TaskID, &item.Title, &item.Done, &item.Position, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		return TaskSubtask{}, translatePostgresError(err)
+	}
+	if err := s.taskWriteAccess(item.TaskID, actorID); err != nil {
+		return TaskSubtask{}, err
+	}
+	if title != nil {
+		item.Title = *title
+	}
+	if done != nil {
+		item.Done = *done
+	}
+	item.UpdatedAt = time.Now().UTC()
+	err := s.pool.QueryRow(context.Background(), `UPDATE task_subtasks SET title = $2, done = $3, updated_at = $4 WHERE id = $1 RETURNING id, task_id, title, done, position, created_at, updated_at`, id, item.Title, item.Done, item.UpdatedAt).Scan(&item.ID, &item.TaskID, &item.Title, &item.Done, &item.Position, &item.CreatedAt, &item.UpdatedAt)
+	return item, translatePostgresError(err)
+}
+
+func (s *PostgresStore) DeleteTaskSubtask(id, actorID string) error {
+	var taskID string
+	if err := s.pool.QueryRow(context.Background(), `SELECT task_id FROM task_subtasks WHERE id = $1`, id).Scan(&taskID); err != nil {
+		return translatePostgresError(err)
+	}
+	if err := s.taskWriteAccess(taskID, actorID); err != nil {
+		return err
+	}
+	_, err := s.pool.Exec(context.Background(), `DELETE FROM task_subtasks WHERE id = $1`, id)
+	return translatePostgresError(err)
+}
+
+func (s *PostgresStore) TaskAttachments(taskID string) ([]TaskAttachment, error) {
+	if _, err := s.taskProjectID(taskID); err != nil {
+		return nil, err
+	}
+	rows, err := s.pool.Query(context.Background(), `SELECT id, task_id, name, content_type, size, created_by, created_at FROM task_attachments WHERE task_id = $1 ORDER BY created_at, id`, taskID)
+	if err != nil {
+		return nil, translatePostgresError(err)
+	}
+	defer rows.Close()
+	items := make([]TaskAttachment, 0)
+	for rows.Next() {
+		var item TaskAttachment
+		if err := rows.Scan(&item.ID, &item.TaskID, &item.Name, &item.ContentType, &item.Size, &item.CreatedBy, &item.CreatedAt); err != nil {
+			return nil, translatePostgresError(err)
+		}
+		items = append(items, item)
+	}
+	return items, translatePostgresError(rows.Err())
+}
+
+func (s *PostgresStore) CreateTaskAttachment(taskID, actorID, name, contentType string, content []byte) (TaskAttachment, error) {
+	if err := s.taskWriteAccess(taskID, actorID); err != nil {
+		return TaskAttachment{}, err
+	}
+	item := TaskAttachment{ID: newID(), TaskID: taskID, Name: name, ContentType: contentType, Size: int64(len(content)), CreatedBy: actorID, CreatedAt: time.Now().UTC(), Data: append([]byte(nil), content...)}
+	_, err := s.pool.Exec(context.Background(), `INSERT INTO task_attachments (id, task_id, name, content_type, size, created_by, content, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, item.ID, item.TaskID, item.Name, item.ContentType, item.Size, item.CreatedBy, item.Data, item.CreatedAt)
+	return item, translatePostgresError(err)
+}
+
+func (s *PostgresStore) TaskAttachmentByID(id string) (TaskAttachment, error) {
+	var item TaskAttachment
+	err := s.pool.QueryRow(context.Background(), `SELECT id, task_id, name, content_type, size, created_by, created_at, content FROM task_attachments WHERE id = $1`, id).Scan(&item.ID, &item.TaskID, &item.Name, &item.ContentType, &item.Size, &item.CreatedBy, &item.CreatedAt, &item.Data)
+	return item, translatePostgresError(err)
+}
+
+func (s *PostgresStore) DeleteTaskAttachment(id, actorID string) error {
+	var taskID string
+	if err := s.pool.QueryRow(context.Background(), `SELECT task_id FROM task_attachments WHERE id = $1`, id).Scan(&taskID); err != nil {
+		return translatePostgresError(err)
+	}
+	if err := s.taskWriteAccess(taskID, actorID); err != nil {
+		return err
+	}
+	_, err := s.pool.Exec(context.Background(), `DELETE FROM task_attachments WHERE id = $1`, id)
 	return translatePostgresError(err)
 }

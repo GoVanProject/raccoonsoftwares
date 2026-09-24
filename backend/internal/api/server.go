@@ -5,9 +5,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/mail"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -70,6 +73,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/tasks/{taskID}", s.requireAuth(s.getTask))
 	mux.HandleFunc("PATCH /api/tasks/{taskID}", s.requireAuth(s.updateTask))
 	mux.HandleFunc("DELETE /api/tasks/{taskID}", s.requireAuth(s.deleteTask))
+	mux.HandleFunc("GET /api/tasks/{taskID}/comments", s.requireAuth(s.listTaskComments))
+	mux.HandleFunc("POST /api/tasks/{taskID}/comments", s.requireAuth(s.createTaskComment))
+	mux.HandleFunc("DELETE /api/task-comments/{commentID}", s.requireAuth(s.deleteTaskComment))
+	mux.HandleFunc("GET /api/tasks/{taskID}/subtasks", s.requireAuth(s.listTaskSubtasks))
+	mux.HandleFunc("POST /api/tasks/{taskID}/subtasks", s.requireAuth(s.createTaskSubtask))
+	mux.HandleFunc("PATCH /api/task-subtasks/{subtaskID}", s.requireAuth(s.updateTaskSubtask))
+	mux.HandleFunc("DELETE /api/task-subtasks/{subtaskID}", s.requireAuth(s.deleteTaskSubtask))
+	mux.HandleFunc("GET /api/tasks/{taskID}/attachments", s.requireAuth(s.listTaskAttachments))
+	mux.HandleFunc("POST /api/tasks/{taskID}/attachments", s.requireAuth(s.createTaskAttachment))
+	mux.HandleFunc("GET /api/task-attachments/{attachmentID}", s.requireAuth(s.downloadTaskAttachment))
+	mux.HandleFunc("DELETE /api/task-attachments/{attachmentID}", s.requireAuth(s.deleteTaskAttachment))
 	mux.HandleFunc("GET /api/leads/{leadID}", s.requireAuth(s.getLead))
 	mux.HandleFunc("PATCH /api/leads/{leadID}", s.requireAuth(s.updateLead))
 	mux.HandleFunc("DELETE /api/leads/{leadID}", s.requireAuth(s.deleteLead))
@@ -632,6 +646,237 @@ func (s *Server) deleteTask(w http.ResponseWriter, r *http.Request, userID strin
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *Server) accessibleTask(w http.ResponseWriter, taskID, userID string) (store.Task, bool) {
+	task, err := s.store.TaskByID(taskID)
+	if err != nil {
+		writeStoreError(w, err)
+		return store.Task{}, false
+	}
+	project, err := s.store.ProjectByID(task.ProjectID)
+	if err != nil {
+		writeStoreError(w, err)
+		return store.Task{}, false
+	}
+	if !projectAccessible(project, userID) {
+		writeError(w, http.StatusForbidden, "você não tem acesso a esta tarefa")
+		return store.Task{}, false
+	}
+	return task, true
+}
+
+func (s *Server) listTaskComments(w http.ResponseWriter, r *http.Request, userID string) {
+	task, ok := s.accessibleTask(w, r.PathValue("taskID"), userID)
+	if !ok {
+		return
+	}
+	items, err := s.store.TaskComments(task.ID)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"comments": items})
+}
+
+func (s *Server) createTaskComment(w http.ResponseWriter, r *http.Request, userID string) {
+	if _, ok := s.accessibleTask(w, r.PathValue("taskID"), userID); !ok {
+		return
+	}
+	var request struct {
+		Body string `json:"body"`
+	}
+	if !readJSON(w, r, &request) {
+		return
+	}
+	request.Body = strings.TrimSpace(request.Body)
+	if request.Body == "" || len(request.Body) > 5000 {
+		writeError(w, http.StatusBadRequest, "o comentário é obrigatório e deve ter até 5.000 caracteres")
+		return
+	}
+	item, err := s.store.CreateTaskComment(r.PathValue("taskID"), userID, request.Body)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"comment": item})
+}
+
+func (s *Server) deleteTaskComment(w http.ResponseWriter, r *http.Request, userID string) {
+	if err := s.store.DeleteTaskComment(r.PathValue("commentID"), userID); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) listTaskSubtasks(w http.ResponseWriter, r *http.Request, userID string) {
+	task, ok := s.accessibleTask(w, r.PathValue("taskID"), userID)
+	if !ok {
+		return
+	}
+	items, err := s.store.TaskSubtasks(task.ID)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"subtasks": items})
+}
+
+func (s *Server) createTaskSubtask(w http.ResponseWriter, r *http.Request, userID string) {
+	if _, ok := s.accessibleTask(w, r.PathValue("taskID"), userID); !ok {
+		return
+	}
+	var request struct {
+		Title string `json:"title"`
+	}
+	if !readJSON(w, r, &request) {
+		return
+	}
+	request.Title = strings.TrimSpace(request.Title)
+	if request.Title == "" || len(request.Title) > 200 {
+		writeError(w, http.StatusBadRequest, "o título da subtarefa é obrigatório e deve ter até 200 caracteres")
+		return
+	}
+	item, err := s.store.CreateTaskSubtask(r.PathValue("taskID"), userID, request.Title)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"subtask": item})
+}
+
+func (s *Server) updateTaskSubtask(w http.ResponseWriter, r *http.Request, userID string) {
+	var request struct {
+		Title *string `json:"title"`
+		Done  *bool   `json:"done"`
+	}
+	if !readJSON(w, r, &request) {
+		return
+	}
+	if request.Title == nil && request.Done == nil {
+		writeError(w, http.StatusBadRequest, "informe o título ou o estado da subtarefa")
+		return
+	}
+	if request.Title != nil {
+		value := strings.TrimSpace(*request.Title)
+		if value == "" || len(value) > 200 {
+			writeError(w, http.StatusBadRequest, "o título da subtarefa é obrigatório e deve ter até 200 caracteres")
+			return
+		}
+		request.Title = &value
+	}
+	item, err := s.store.UpdateTaskSubtask(r.PathValue("subtaskID"), userID, request.Title, request.Done)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"subtask": item})
+}
+
+func (s *Server) deleteTaskSubtask(w http.ResponseWriter, r *http.Request, userID string) {
+	if err := s.store.DeleteTaskSubtask(r.PathValue("subtaskID"), userID); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+const maxTaskAttachmentBytes = 10 << 20
+
+func (s *Server) listTaskAttachments(w http.ResponseWriter, r *http.Request, userID string) {
+	task, ok := s.accessibleTask(w, r.PathValue("taskID"), userID)
+	if !ok {
+		return
+	}
+	items, err := s.store.TaskAttachments(task.ID)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	views := make([]taskAttachmentResponse, 0, len(items))
+	for _, item := range items {
+		views = append(views, taskAttachmentView(item))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"attachments": views})
+}
+
+func (s *Server) createTaskAttachment(w http.ResponseWriter, r *http.Request, userID string) {
+	if _, ok := s.accessibleTask(w, r.PathValue("taskID"), userID); !ok {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxTaskAttachmentBytes+(1<<20))
+	if err := r.ParseMultipartForm(1 << 20); err != nil {
+		if errors.Is(err, http.ErrNotMultipart) {
+			writeError(w, http.StatusBadRequest, "envie o arquivo em formato multipart")
+			return
+		}
+		writeError(w, http.StatusRequestEntityTooLarge, "o arquivo deve ter até 10 MB")
+		return
+	}
+	if r.MultipartForm != nil {
+		defer r.MultipartForm.RemoveAll()
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "selecione um arquivo para anexar")
+		return
+	}
+	defer file.Close()
+	content, err := io.ReadAll(io.LimitReader(file, maxTaskAttachmentBytes+1))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "não foi possível ler o arquivo")
+		return
+	}
+	if len(content) == 0 {
+		writeError(w, http.StatusBadRequest, "o arquivo está vazio")
+		return
+	}
+	if len(content) > maxTaskAttachmentBytes {
+		writeError(w, http.StatusRequestEntityTooLarge, "o arquivo deve ter até 10 MB")
+		return
+	}
+	name := filepath.Base(strings.ReplaceAll(strings.TrimSpace(header.Filename), `\`, "/"))
+	if name == "" || name == "." || len(name) > 255 {
+		writeError(w, http.StatusBadRequest, "nome de arquivo inválido")
+		return
+	}
+	contentType := http.DetectContentType(content)
+	item, err := s.store.CreateTaskAttachment(r.PathValue("taskID"), userID, name, contentType, content)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"attachment": taskAttachmentView(item)})
+}
+
+func (s *Server) downloadTaskAttachment(w http.ResponseWriter, r *http.Request, userID string) {
+	item, err := s.store.TaskAttachmentByID(r.PathValue("attachmentID"))
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if _, ok := s.accessibleTask(w, item.TaskID, userID); !ok {
+		return
+	}
+	disposition := mime.FormatMediaType("attachment", map[string]string{"filename": item.Name})
+	if disposition == "" {
+		disposition = `attachment; filename="download"`
+	}
+	w.Header().Set("Content-Type", item.ContentType)
+	w.Header().Set("Content-Disposition", disposition)
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(item.Data)))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(item.Data)
+}
+
+func (s *Server) deleteTaskAttachment(w http.ResponseWriter, r *http.Request, userID string) {
+	if err := s.store.DeleteTaskAttachment(r.PathValue("attachmentID"), userID); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 type leadImportRequest struct {
 	Leads []store.LeadImport `json:"leads"`
 }
@@ -849,6 +1094,23 @@ type projectMemberResponse struct {
 	AvatarData string    `json:"avatar_data,omitempty"`
 	Role       string    `json:"role"`
 	CreatedAt  time.Time `json:"created_at"`
+}
+
+type taskAttachmentResponse struct {
+	ID          string    `json:"id"`
+	TaskID      string    `json:"task_id"`
+	Name        string    `json:"name"`
+	ContentType string    `json:"content_type"`
+	Size        int64     `json:"size"`
+	CreatedBy   string    `json:"created_by"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+func taskAttachmentView(item store.TaskAttachment) taskAttachmentResponse {
+	return taskAttachmentResponse{
+		ID: item.ID, TaskID: item.TaskID, Name: item.Name, ContentType: item.ContentType,
+		Size: item.Size, CreatedBy: item.CreatedBy, CreatedAt: item.CreatedAt,
+	}
 }
 
 type projectResponse struct {
@@ -1113,6 +1375,8 @@ func writeStoreError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, "somente o proprietário pode realizar esta ação")
 	case errors.Is(err, store.ErrReadOnly):
 		writeError(w, http.StatusForbidden, "este membro tem permissão somente para visualização")
+	case errors.Is(err, store.ErrNotAuthor):
+		writeError(w, http.StatusForbidden, "somente o autor pode remover este comentário")
 	case errors.Is(err, store.ErrInvalid):
 		writeError(w, http.StatusBadRequest, "operação inválida")
 	default:
