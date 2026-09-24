@@ -44,8 +44,8 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
 
   return (
     <TooltipProvider delayDuration={250}>
-      <div className={`workspace-v2-shell ${expanded ? "is-expanded" : ""}`}>
-        <aside className="workspace-v2-desktop-nav">
+      <div className="min-h-dvh bg-muted/35 md:grid md:grid-cols-[auto_minmax(0,1fr)]">
+        <aside className="sticky top-0 hidden h-dvh border-r border-border bg-card md:block">
           <WorkspaceRail
             mode={section === "projects" ? "select" : section}
             projectId={projectId}
@@ -54,8 +54,8 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
             onLogout={logout}
           />
         </aside>
-        <header className="workspace-v2-mobile-bar">
-          <span>RaccoonSoftwares</span>
+        <header className="flex min-h-16 items-center justify-between border-b border-border bg-card px-4 md:hidden">
+          <span className="text-sm font-bold tracking-tight">RaccoonSoftwares</span>
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
               <Button
@@ -66,7 +66,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                 <List size={20} />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="workspace-v2-mobile-sheet">
+            <SheetContent side="left" className="w-[min(300px,calc(100vw-24px))] p-0">
               <SheetTitle className="sr-only">
                 Navegação do workspace
               </SheetTitle>
@@ -79,7 +79,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
             </SheetContent>
           </Sheet>
         </header>
-        <div className="workspace-v2-content">{children}</div>
+        <div className="min-w-0">{children}</div>
       </div>
     </TooltipProvider>
   );

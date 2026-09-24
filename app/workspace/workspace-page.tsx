@@ -18,6 +18,7 @@ import remarkGfm from "remark-gfm";
 
 import { MagicCard } from "../../components/ui/magic-card";
 import { ShimmerButton } from "../../components/ui/shimmer-button";
+import { Button } from "@/components/ui/button";
 import { BlurFade } from "@/components/ui/blur-fade";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { API_URL, taskboardFetch } from "../lib/taskboard";
@@ -1571,7 +1572,7 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
         {taskModal ? (
           <DialogContent
             className={cn(
-              "max-h-[calc(100dvh-20px)] w-[calc(100vw-20px)] gap-0 overflow-y-auto rounded-2xl p-4 sm:max-h-[calc(100dvh-40px)] sm:w-[calc(100vw-48px)] sm:p-6",
+              "!fixed !left-1/2 !top-1/2 !-translate-x-1/2 !-translate-y-1/2 max-h-[calc(100dvh-20px)] w-[calc(100vw-20px)] gap-0 overflow-y-auto rounded-2xl p-4 sm:max-h-[calc(100dvh-40px)] sm:w-[calc(100vw-48px)] sm:p-6",
               taskModal === "view" ? "max-w-[1180px]" : "max-w-2xl",
             )}
             showCloseButton={false}
@@ -1598,21 +1599,23 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                       : viewingTask?.title}
                 </h2>
               </div>
-              <button
-                className="grid size-10 shrink-0 place-items-center rounded-lg border border-border bg-secondary text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              <Button
+                variant="outline"
+                size="icon"
+                className="size-10 shrink-0 rounded-lg text-muted-foreground hover:text-foreground"
                 type="button"
                 onClick={closeTaskModal}
                 aria-label="Fechar janela"
                 title="Fechar"
               >
                 <WorkspaceIcon name="close" />
-              </button>
+              </Button>
             </div>
             {taskModal === "view" && viewingTask ? (
               <div className="grid items-start gap-[18px] sm:grid-cols-[minmax(0,1fr)_250px] lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-7">
                 <div className="grid min-w-0 gap-6">
                   <div>
-                    <header className="mb-1.5 flex items-center justify-between gap-3"><h3 className="m-0 text-[15px]">Descrição</h3>{!isReadOnly ? <button className="border-0 bg-transparent text-xs font-semibold text-primary" type="button" onClick={() => startTaskEdit(viewingTask)}>Editar</button> : null}</header>
+                    <header className="mb-1.5 flex items-center justify-between gap-3"><h3 className="m-0 text-[15px]">Descrição</h3>{!isReadOnly ? <Button variant="link" size="sm" className="h-8" type="button" onClick={() => startTaskEdit(viewingTask)}>Editar</Button> : null}</header>
                     <div className="m-0 min-h-12 border-0 bg-transparent px-0 py-2"><MarkdownPreview value={viewingTask.description} emptyText="Adicionar descrição" /></div>
                   </div>
                   <section className="grid gap-3 border-t border-border pt-[18px]">
@@ -1622,16 +1625,16 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                   <section className="grid gap-3 border-t border-border pt-[18px]">
                     <header><div className="grid gap-1"><h3 className="m-0 text-[15px]">Subtarefas</h3><small className="text-xs text-muted-foreground">{taskSubtasks.filter((item) => item.done).length} de {taskSubtasks.length} concluídas</small></div></header>
                     {taskDetailLoading ? <p className="m-0 text-xs text-muted-foreground">Carregando subtarefas…</p> : <div className="grid gap-2">{taskSubtasks.map((subtask) => <div className="grid min-h-[38px] grid-cols-[22px_minmax(0,1fr)_34px] items-center gap-2" key={subtask.id}><input className="size-[18px] accent-primary" type="checkbox" checked={subtask.done} disabled={isReadOnly} onChange={() => void toggleTaskSubtask(subtask)} aria-label={`Marcar ${subtask.title} como ${subtask.done ? "pendente" : "concluída"}`} /><span className={cn("text-[13px]", subtask.done && "text-muted-foreground line-through")}>{subtask.title}</span>{!isReadOnly ? <button className="grid size-[34px] place-items-center rounded-md border-0 bg-transparent text-xl text-muted-foreground hover:bg-muted hover:text-foreground" type="button" onClick={() => void removeTaskResource(`/api/task-subtasks/${subtask.id}`, subtask.id, "subtask")} aria-label={`Remover subtarefa ${subtask.title}`}>×</button> : null}</div>)}</div>}
-                    {!isReadOnly ? <form className="flex gap-2" onSubmit={addTaskSubtask}><input className="min-w-0 flex-1 rounded-lg border border-border bg-card px-3 py-2.5 text-[13px] text-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20" value={taskSubtaskDraft} onChange={(event) => setTaskSubtaskDraft(event.target.value)} placeholder="Adicionar subtarefa" aria-label="Nova subtarefa" maxLength={200} /><button className="rounded-lg border border-border bg-secondary px-3 text-xs font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50" type="submit" disabled={taskDetailSaving || !taskSubtaskDraft.trim()}>Adicionar</button></form> : null}
+                    {!isReadOnly ? <form className="flex gap-2" onSubmit={addTaskSubtask}><input className="min-w-0 flex-1 rounded-lg border border-border bg-card px-3 py-2.5 text-[13px] text-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20" value={taskSubtaskDraft} onChange={(event) => setTaskSubtaskDraft(event.target.value)} placeholder="Adicionar subtarefa" aria-label="Nova subtarefa" maxLength={200} /><Button variant="secondary" size="sm" type="submit" disabled={taskDetailSaving || !taskSubtaskDraft.trim()}>Adicionar</Button></form> : null}
                   </section>
                   <section className="grid gap-3 border-t border-border pt-[18px]">
                     <header><div className="grid gap-1"><h3 className="m-0 text-[15px]">Comentários</h3><small className="text-xs text-muted-foreground">{taskComments.length} {taskComments.length === 1 ? "comentário" : "comentários"}</small></div></header>
                     {taskDetailLoading ? <p className="m-0 text-xs text-muted-foreground">Carregando comentários…</p> : taskComments.length ? <div className="grid gap-2">{taskComments.map((comment) => { const author = members.find((member) => member.id === comment.author_id); return <article className="grid grid-cols-[36px_minmax(0,1fr)_34px] items-start gap-2.5" key={comment.id}><span className="grid size-[34px] place-items-center rounded-full bg-muted text-xs font-bold text-primary">{(author?.alias || author?.email || "?").slice(0, 1).toUpperCase()}</span><div className="min-w-0 rounded-lg border border-border px-3 py-2.5"><header className="flex flex-wrap items-baseline gap-2"><strong className="text-xs">{author?.alias || author?.email || "Integrante"}</strong><time className="text-[11px] text-muted-foreground" dateTime={comment.created_at}>{new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(comment.created_at))}</time></header><p className="mt-2 break-words text-[13px] leading-6 whitespace-pre-wrap">{comment.body}</p></div>{comment.author_id === currentUserID ? <button className="grid size-[34px] place-items-center rounded-md border-0 bg-transparent text-xl text-muted-foreground hover:bg-muted hover:text-foreground" type="button" onClick={() => void removeTaskResource(`/api/task-comments/${comment.id}`, comment.id, "comment")} aria-label="Remover comentário">×</button> : null}</article>; })}</div> : <p className="m-0 text-xs text-muted-foreground">Ainda não há comentários.</p>}
-                    {!isReadOnly ? <form className="grid gap-2 rounded-[10px] border border-border p-3" onSubmit={addTaskComment}><textarea className="w-full rounded-lg border border-border bg-card px-3 py-2.5 text-[13px] text-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20" value={taskCommentDraft} onChange={(event) => setTaskCommentDraft(event.target.value)} placeholder="Escreva um comentário…" aria-label="Novo comentário" maxLength={5000} rows={3} /><div className="flex items-center justify-between gap-3 max-sm:flex-col max-sm:items-start"><small className="text-xs text-muted-foreground">Comente para compartilhar uma atualização com a equipe.</small><button className="edit-save-button" type="submit" disabled={taskDetailSaving || !taskCommentDraft.trim()}>Comentar</button></div></form> : null}
+                    {!isReadOnly ? <form className="grid gap-2 rounded-[10px] border border-border p-3" onSubmit={addTaskComment}><textarea className="w-full rounded-lg border border-border bg-card px-3 py-2.5 text-[13px] text-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20" value={taskCommentDraft} onChange={(event) => setTaskCommentDraft(event.target.value)} placeholder="Escreva um comentário…" aria-label="Novo comentário" maxLength={5000} rows={3} /><div className="flex items-center justify-between gap-3 max-sm:flex-col max-sm:items-start"><small className="text-xs text-muted-foreground">Comente para compartilhar uma atualização com a equipe.</small><Button type="submit" disabled={taskDetailSaving || !taskCommentDraft.trim()}>Comentar</Button></div></form> : null}
                   </section>
                 </div>
                 <aside className="order-first grid gap-4 rounded-[10px] border border-border bg-muted/20 p-4 sm:order-none" aria-label="Informações da tarefa">
-                  <header className="flex items-center justify-between border-b border-border pb-3"><h3 className="m-0 text-[15px]">Informações</h3>{!isReadOnly ? <button className="border-0 bg-transparent text-xs font-semibold text-primary" type="button" onClick={() => startTaskEdit(viewingTask)} aria-label="Editar todos os campos">Editar</button> : null}</header>
+                  <header className="flex items-center justify-between border-b border-border pb-3"><h3 className="m-0 text-[15px]">Informações</h3>{!isReadOnly ? <Button variant="link" size="sm" className="h-8" type="button" onClick={() => startTaskEdit(viewingTask)} aria-label="Editar todos os campos">Editar</Button> : null}</header>
                   <label className="grid gap-1.5 text-xs text-muted-foreground">Status<select className="min-h-[38px] w-full rounded-md border border-border bg-card px-2 text-[13px] text-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-75" value={viewingTask.status} disabled={isReadOnly} onChange={(event) => void updateTask(viewingTask, { status: event.target.value as Status })}>{columns.map((column) => <option value={column.status} key={column.status}>{column.label}</option>)}</select></label>
                   <label className="grid gap-1.5 text-xs text-muted-foreground">Responsável<select className="min-h-[38px] w-full rounded-md border border-border bg-card px-2 text-[13px] text-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-75" value={viewingTask.assignee_id || ""} disabled={isReadOnly} onChange={(event) => void updateTask(viewingTask, { assignee_id: event.target.value })}><option value="">Sem responsável</option>{members.map((member) => <option value={member.id} key={member.id}>{member.alias || member.email}</option>)}</select></label>
                   <label className="grid gap-1.5 text-xs text-muted-foreground">Prioridade<select className="min-h-[38px] w-full rounded-md border border-border bg-card px-2 text-[13px] text-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-75" value={viewingTask.priority} disabled={isReadOnly} onChange={(event) => void updateTask(viewingTask, { priority: event.target.value as Priority })}><option value="low">Baixa</option><option value="medium">Média</option><option value="high">Alta</option></select></label>

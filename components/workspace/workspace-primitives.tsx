@@ -43,11 +43,11 @@ export function PageHeader({
   className?: string;
 }) {
   return (
-    <header className={cn("workspace-v2-page-header", className)}>
-      <div>
-        {eyebrow ? <p>{eyebrow}</p> : null}
-        <h1>{title}</h1>
-        {description ? <span>{description}</span> : null}
+    <header className={cn("flex flex-wrap items-end justify-between gap-4 border-b border-border pb-5", className)}>
+      <div className="min-w-0">
+        {eyebrow ? <p className="mb-1 text-xs font-bold uppercase tracking-[0.12em] text-primary">{eyebrow}</p> : null}
+        <h1 className="m-0 text-2xl font-bold tracking-tight text-foreground">{title}</h1>
+        {description ? <span className="mt-1 block text-sm text-muted-foreground">{description}</span> : null}
       </div>
       {actions ? <div>{actions}</div> : null}
     </header>
@@ -81,7 +81,12 @@ export function StatusBanner({
     tone === "success" ? CheckCircle : tone === "error" ? WarningCircle : Info;
   return (
     <div
-      className={cn("workspace-v2-status", `is-${tone}`)}
+      className={cn(
+        "flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm",
+        tone === "success" && "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+        tone === "error" && "border-destructive/30 bg-destructive/10 text-destructive",
+        tone === "info" && "border-primary/25 bg-primary/10 text-foreground",
+      )}
       role={tone === "error" ? "alert" : "status"}
     >
       <Icon size={18} weight="fill" />
@@ -101,17 +106,17 @@ export function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="workspace-v2-empty">
+    <div className="grid place-items-center gap-3 rounded-xl border border-dashed border-border bg-card p-8 text-center">
       {icon}
-      <h2>{title}</h2>
-      <p>{description}</p>
+      <h2 className="m-0 text-lg font-semibold">{title}</h2>
+      <p className="m-0 max-w-md text-sm text-muted-foreground">{description}</p>
       {action}
     </div>
   );
 }
 export function LoadingState({ rows = 3 }: { rows?: number }) {
   return (
-    <div className="workspace-v2-loading" role="status" aria-label="Carregando">
+    <div className="grid gap-3" role="status" aria-label="Carregando">
       <Skeleton className="h-8 w-56" />
       {Array.from({ length: rows }, (_, index) => (
         <Skeleton className="h-20 w-full" key={index} />
@@ -133,12 +138,12 @@ export function FormField({
   children: React.ReactNode;
 }) {
   return (
-    <div className="workspace-v2-field">
+    <div className="grid gap-1.5">
       <Label htmlFor={id}>{label}</Label>
       {children}
-      {hint && !error ? <small>{hint}</small> : null}
+      {hint && !error ? <small className="text-xs text-muted-foreground">{hint}</small> : null}
       {error ? (
-        <small className="is-error" role="alert">
+        <small className="text-xs text-destructive" role="alert">
           {error}
         </small>
       ) : null}
@@ -155,11 +160,11 @@ export const UploadField = React.forwardRef<
     onChange?: React.ChangeEventHandler<HTMLInputElement>;
   }
 >(({ id, label, hint, accept, onChange }, ref) => (
-  <div className="workspace-v2-upload">
+  <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 p-3">
     <UploadSimple size={22} />
-    <div>
+    <div className="grid gap-1">
       <Label htmlFor={id}>{label}</Label>
-      {hint ? <small>{hint}</small> : null}
+      {hint ? <small className="text-xs text-muted-foreground">{hint}</small> : null}
     </div>
     <Input ref={ref} id={id} type="file" accept={accept} onChange={onChange} />
   </div>
