@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import { GeistSans } from "geist/font/sans";
 import "./styles/tokens.css";
+import "./styles/tailwind.css";
 import "./globals.css";
 import "./styles/workspace.css";
 import "./styles/landing.css";
 import "./styles/workspace-overrides.css";
-import "./styles/tailwind.css";
 import "leaflet/dist/leaflet.css";
 import { Providers } from "./providers";
 

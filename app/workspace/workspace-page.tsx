@@ -89,7 +89,7 @@ const labelPillClasses: Record<LabelColor, string> = {
   gray: "bg-[hsl(var(--label-gray-background))] text-[hsl(var(--label-gray-foreground))]",
 };
 
-const labelPillBase = "inline-flex min-h-6 max-w-full items-center overflow-hidden whitespace-nowrap rounded-md px-2 py-[3px] text-xs font-bold leading-[1.3] text-ellipsis";
+const labelPillBase = "task-label-pill inline-flex min-h-6 max-w-full items-center overflow-hidden whitespace-nowrap rounded-md px-2 py-[3px] text-xs font-bold leading-[1.3] text-ellipsis";
 const labelOptionClass = "m-0 flex min-h-11 min-w-0 cursor-pointer items-center justify-start gap-2 text-xs font-medium text-foreground";
 const labelCheckboxClass = "m-0 size-5 shrink-0 accent-primary";
 const labelMenuClass = "absolute left-0 top-[calc(100%+6px)] z-20 grid w-[min(340px,calc(100vw-48px))] gap-3 rounded-[11px] border border-border bg-card p-3 shadow-[0_24px_80px_hsl(var(--foreground)/0.15)] sm:w-[min(420px,calc(100vw-64px))]";
@@ -1196,7 +1196,7 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                   </div>
                 </MagicCard>
               </BlurFade>
-              <nav className="my-1 mb-5 flex gap-1 overflow-x-auto border-b border-border" aria-label="Visões do projeto">
+              <nav className="project-view-tabs my-1 mb-5 flex gap-1 overflow-x-auto border-b border-border" aria-label="Visões do projeto">
                 {([
                   ["summary", "Resumo", "summary"],
                   ["backlog", "Backlog", "backlog"],
@@ -1295,7 +1295,7 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                   </div>
                   {columns.filter((column) => backlogStatusFilter === "all" || column.status === backlogStatusFilter).map((column) => {
                     const statusTasks = backlogTasks.filter((task) => task.status === column.status);
-                    return <section className="overflow-hidden rounded-xl border border-border bg-card" key={column.status}><header className="flex min-h-[54px] items-center gap-2 border-b border-border px-4"><StatusDot tone={column.tone} /><h2 className="m-0 text-sm">{column.label}</h2><b className="grid size-6 place-items-center rounded-full bg-muted text-xs">{statusTasks.length}</b></header>{statusTasks.map((task) => <button className="grid w-full grid-cols-[minmax(180px,1.6fr)_minmax(100px,.8fr)_70px_minmax(100px,.8fr)_110px] items-center gap-3.5 border-0 border-b border-border bg-transparent px-4 py-3 text-left text-foreground transition-colors last:border-b-0 hover:bg-muted focus-visible:bg-muted max-md:grid-cols-[minmax(140px,1.4fr)_minmax(80px,.8fr)_60px] max-md:[&>span:nth-last-child(-n+2)]:hidden max-sm:grid-cols-[minmax(0,1fr)_auto] max-sm:gap-2 max-sm:px-3 max-sm:[&>span:nth-last-child(-n+2)]:hidden" type="button" key={task.id} onClick={() => openTaskView(task)}><span className="grid min-w-0 gap-1"><strong className="overflow-hidden text-ellipsis whitespace-nowrap">{task.title}</strong><small className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">{task.description || "Sem descrição"}</small></span><LabelPills labels={labels} labelIDs={task.label_ids} limit={2} inline /><PriorityPill priority={task.priority} /><span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">{members.find((member) => member.id === task.assignee_id)?.alias || "Sem responsável"}</span><span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">{task.due_date ? new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "short", year: "numeric" }).format(new Date(`${task.due_date}T12:00:00`)) : "Sem prazo"}</span></button>)}{!statusTasks.length ? <p className="m-0 p-4 text-[13px] text-muted-foreground">Nenhuma tarefa nesta etapa.</p> : null}</section>;
+                    return <section className="overflow-hidden rounded-xl border border-border bg-card" key={column.status}><header className="flex min-h-[54px] items-center gap-2 border-b border-border px-4"><StatusDot tone={column.tone} /><h2 className="m-0 text-sm">{column.label}</h2><b className="grid size-6 place-items-center rounded-full bg-muted text-xs">{statusTasks.length}</b></header>{statusTasks.map((task) => <button className="backlog-task-row grid w-full grid-cols-[minmax(180px,1.6fr)_minmax(100px,.8fr)_70px_minmax(100px,.8fr)_110px] items-center gap-3.5 border-0 border-b border-border bg-transparent px-4 py-3 text-left text-foreground transition-colors last:border-b-0 hover:bg-muted focus-visible:bg-muted max-md:grid-cols-[minmax(140px,1.4fr)_minmax(80px,.8fr)_60px] max-md:[&>span:nth-last-child(-n+2)]:hidden max-sm:grid-cols-[minmax(0,1fr)_auto] max-sm:gap-2 max-sm:px-3 max-sm:[&>span:nth-last-child(-n+2)]:hidden" type="button" key={task.id} onClick={() => openTaskView(task)}><span className="grid min-w-0 gap-1"><strong className="overflow-hidden text-ellipsis whitespace-nowrap">{task.title}</strong><small className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">{task.description || "Sem descrição"}</small></span><LabelPills labels={labels} labelIDs={task.label_ids} limit={2} inline /><PriorityPill priority={task.priority} /><span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">{members.find((member) => member.id === task.assignee_id)?.alias || "Sem responsável"}</span><span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">{task.due_date ? new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "short", year: "numeric" }).format(new Date(`${task.due_date}T12:00:00`)) : "Sem prazo"}</span></button>)}{!statusTasks.length ? <p className="m-0 p-4 text-[13px] text-muted-foreground">Nenhuma tarefa nesta etapa.</p> : null}</section>;
                   })}
                   {!backlogTasks.length ? <div className="mt-5 p-[18px] text-center text-[13px] text-muted-foreground">Nenhuma tarefa corresponde aos filtros aplicados.</div> : null}
                 </section>
@@ -1309,7 +1309,7 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                   </button>
                 ) : null}
               </div>
-              <div className="grid min-w-0 grid-flow-col auto-cols-[minmax(280px,1fr)] gap-4 overflow-x-auto pb-2 xl:grid-flow-row xl:grid-cols-4 xl:auto-cols-auto">
+              <div className="kanban-grid grid min-w-0 grid-flow-col auto-cols-[minmax(280px,1fr)] gap-4 overflow-x-auto pb-2 xl:grid-flow-row xl:grid-cols-4 xl:auto-cols-auto">
                 {columns.map((column) => (
                   <section
                     className={cn(
@@ -1334,7 +1334,7 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                       {groupedTasks[column.status].map((task) => (
                         <article
                           className={cn(
-                            "min-w-0 w-full max-w-full overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm transition-[transform,border-color,box-shadow,opacity] duration-300 hover:-translate-y-0.5 hover:border-input hover:shadow-md focus-within:-translate-y-0.5 focus-within:border-input focus-within:shadow-md",
+                            "kanban-card min-w-0 w-full max-w-full overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm transition-[transform,border-color,box-shadow,opacity] duration-300 hover:-translate-y-0.5 hover:border-input hover:shadow-md focus-within:-translate-y-0.5 focus-within:border-input focus-within:shadow-md",
                             !isReadOnly && "cursor-grab active:cursor-grabbing",
                             draggedTaskId === task.id && "rotate-1 scale-[0.98] opacity-55",
                             movingTaskId === task.id && "pointer-events-none opacity-65",

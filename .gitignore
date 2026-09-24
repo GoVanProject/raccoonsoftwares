@@ -25,6 +25,7 @@ pnpm-debug.log*
 # Configurações locais de editores/IDE
 .vscode/
 .idea/
+.maestri/
 
 # Arquivos do sistema operacional
 .DS_Store

@@ -2105,6 +2105,8 @@ html[data-theme="dark"] .workspace-rail-logout:focus-visible {
   position: fixed;
   top: 50%;
   left: 50%;
+  display: block;
+  max-width: none;
   width: min(620px, calc(100vw - 32px));
   max-height: min(760px, calc(100dvh - 32px));
   overflow-y: auto;
