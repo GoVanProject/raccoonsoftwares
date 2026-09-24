@@ -1,0 +1,28 @@
+/* Minimum readable type and pointer targets for authenticated workspace controls. */
+.workspace-v2-content .kanban-card h3 { font-size: 16px; }
+.workspace-v2-content .kanban-card p,
+.workspace-v2-content .markdown-preview { font-size: 14px; }
+.workspace-v2-content .priority { font-size: 12px; }
+.workspace-v2-content .task-card-open { display: grid; width: 100%; min-height: 44px; align-items: center; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.workspace-v2-content .task-card-open:focus-visible { outline: 3px solid hsl(var(--ring) / .45); outline-offset: 2px; }
+.workspace-v2-content .workspace-primary-action,
+.workspace-v2-content .workspace-secondary-action,
+.workspace-v2-content .room-link,
+.workspace-v2-content .edit-trigger,
+.workspace-v2-content .edit-save-button,
+.workspace-v2-content .edit-cancel-button { min-height: 44px; }
+.workspace-v2-content .task-card-top select,
+.workspace-v2-content .task-card-footer select,
+.workspace-v2-content .workspace-member-row select { min-height: 44px; padding: 0 8px; border: 1px solid hsl(var(--border)); border-radius: 8px; background: hsl(var(--card)); color: hsl(var(--foreground)); font-size: 12px; }
+.workspace-v2-content .task-card-top select:focus-visible,
+.workspace-v2-content .task-card-footer select:focus-visible,
+.workspace-v2-content .workspace-member-row select:focus-visible { outline: 3px solid hsl(var(--ring) / .45); outline-offset: 2px; }
+.workspace-v2-content .workspace-member-remove { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
+.workspace-v2-content .room-tile-action { width: 44px; min-width: 44px; height: 44px; min-height: 44px; flex-basis: 44px; }
+.workspace-v2-content .room-control-button { min-height: 44px; font-size: 12px; }
+.workspace-v2-content .room-icon-control { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
+.workspace-v2-content .prospect-pipeline-card strong { font-size: 14px; }
+.workspace-v2-content .prospect-pipeline-card span,
+.workspace-v2-content .prospect-pipeline-card small { font-size: 12px; }
+.workspace-v2-content .workspace-v2-field small,
+.workspace-v2-content .workspace-selection-card small { font-size: 12px; }

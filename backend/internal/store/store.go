@@ -62,10 +62,19 @@ type Task struct {
 	Status      string    `json:"status"`
 	Priority    string    `json:"priority"`
 	AssigneeID  string    `json:"assignee_id,omitempty"`
+	LabelIDs    []string  `json:"label_ids"`
 	DueDate     string    `json:"due_date,omitempty"`
 	CreatedBy   string    `json:"created_by"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type Label struct {
+	ID        string    `json:"id"`
+	ProjectID string    `json:"project_id"`
+	Name      string    `json:"name"`
+	Color     string    `json:"color"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 const (
@@ -160,6 +169,7 @@ type data struct {
 	Users          map[string]User         `json:"users"`
 	Projects       map[string]Project      `json:"projects"`
 	Tasks          map[string]Task         `json:"tasks"`
+	Labels         map[string]Label        `json:"labels"`
 	Leads          map[string]Lead         `json:"leads"`
 	LeadActivities map[string]LeadActivity `json:"lead_activities"`
 }
@@ -189,9 +199,11 @@ type Repository interface {
 	UpdateMemberRole(projectID, actorID, userID, role string) ([]ProjectMember, error)
 	TasksByProject(projectID string) []Task
 	TaskCountByProject(projectID string) int
-	CreateTask(projectID, creatorID, title, description, status, priority, assigneeID, dueDate string) (Task, error)
+	LabelsByProject(projectID string) []Label
+	CreateLabel(projectID, actorID, name, color string) (Label, error)
+	CreateTask(projectID, creatorID, title, description, status, priority, assigneeID, dueDate string, labelIDs []string) (Task, error)
 	TaskByID(id string) (Task, error)
-	UpdateTask(id, actorID, title, description, status, priority, assigneeID, dueDate string) (Task, error)
+	UpdateTask(id, actorID, title, description, status, priority, assigneeID, dueDate string, labelIDs []string) (Task, error)
 	DeleteTask(id, actorID string) error
 	ListLeads(projectID string, filters LeadFilters) []Lead
 	CreateLead(projectID, creatorID string, lead Lead) (Lead, error)
@@ -211,6 +223,7 @@ func New(path string) (*Store, error) {
 		Users:          make(map[string]User),
 		Projects:       make(map[string]Project),
 		Tasks:          make(map[string]Task),
+		Labels:         make(map[string]Label),
 		Leads:          make(map[string]Lead),
 		LeadActivities: make(map[string]LeadActivity),
 	}}
@@ -232,6 +245,15 @@ func New(path string) (*Store, error) {
 	}
 	if s.data.Tasks == nil {
 		s.data.Tasks = make(map[string]Task)
+	}
+	if s.data.Labels == nil {
+		s.data.Labels = make(map[string]Label)
+	}
+	for taskID, task := range s.data.Tasks {
+		if task.LabelIDs == nil {
+			task.LabelIDs = []string{}
+			s.data.Tasks[taskID] = task
+		}
 	}
 	if s.data.Leads == nil {
 		s.data.Leads = make(map[string]Lead)
@@ -395,6 +417,11 @@ func (s *Store) DeleteProject(id, actorID string) error {
 			delete(s.data.Tasks, taskID)
 		}
 	}
+	for labelID, label := range s.data.Labels {
+		if label.ProjectID == id {
+			delete(s.data.Labels, labelID)
+		}
+	}
 	return s.persistLocked()
 }
 
@@ -515,7 +542,42 @@ func (s *Store) UpdateMemberRole(projectID, actorID, userID, role string) ([]Pro
 	return members, nil
 }
 
-func (s *Store) CreateTask(projectID, creatorID, title, description, status, priority, assigneeID, dueDate string) (Task, error) {
+func (s *Store) LabelsByProject(projectID string) []Label {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	labels := make([]Label, 0)
+	for _, label := range s.data.Labels {
+		if label.ProjectID == projectID {
+			labels = append(labels, label)
+		}
+	}
+	return labels
+}
+
+func (s *Store) CreateLabel(projectID, actorID, name, color string) (Label, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	project, ok := s.data.Projects[projectID]
+	if !ok {
+		return Label{}, ErrNotFound
+	}
+	if !contains(project.MemberIDs, actorID) {
+		return Label{}, ErrNotMember
+	}
+	if memberRole(project, actorID) == MemberRoleViewer {
+		return Label{}, ErrReadOnly
+	}
+	for _, label := range s.data.Labels {
+		if label.ProjectID == projectID && strings.EqualFold(label.Name, name) {
+			return Label{}, ErrConflict
+		}
+	}
+	label := Label{ID: newID(), ProjectID: projectID, Name: name, Color: color, CreatedAt: time.Now().UTC()}
+	s.data.Labels[label.ID] = label
+	return label, s.persistLocked()
+}
+
+func (s *Store) CreateTask(projectID, creatorID, title, description, status, priority, assigneeID, dueDate string, labelIDs []string) (Task, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	project, ok := s.data.Projects[projectID]
@@ -531,8 +593,12 @@ func (s *Store) CreateTask(projectID, creatorID, title, description, status, pri
 	if assigneeID != "" && !contains(project.MemberIDs, assigneeID) {
 		return Task{}, ErrNotMember
 	}
+	labelIDs = normalizeIDs(labelIDs)
+	if !s.labelsBelongToProjectLocked(projectID, labelIDs) {
+		return Task{}, ErrInvalid
+	}
 	now := time.Now().UTC()
-	task := Task{ID: newID(), ProjectID: projectID, Title: title, Description: description, Status: status, Priority: priority, AssigneeID: assigneeID, DueDate: dueDate, CreatedBy: creatorID, CreatedAt: now, UpdatedAt: now}
+	task := Task{ID: newID(), ProjectID: projectID, Title: title, Description: description, Status: status, Priority: priority, AssigneeID: assigneeID, LabelIDs: labelIDs, DueDate: dueDate, CreatedBy: creatorID, CreatedAt: now, UpdatedAt: now}
 	s.data.Tasks[task.ID] = task
 	return task, s.persistLocked()
 }
@@ -571,7 +637,7 @@ func (s *Store) TaskByID(id string) (Task, error) {
 	return task, nil
 }
 
-func (s *Store) UpdateTask(id, actorID, title, description, status, priority, assigneeID, dueDate string) (Task, error) {
+func (s *Store) UpdateTask(id, actorID, title, description, status, priority, assigneeID, dueDate string, labelIDs []string) (Task, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	task, ok := s.data.Tasks[id]
@@ -591,6 +657,10 @@ func (s *Store) UpdateTask(id, actorID, title, description, status, priority, as
 	if assigneeID != "" && !contains(project.MemberIDs, assigneeID) {
 		return Task{}, ErrNotMember
 	}
+	labelIDs = normalizeIDs(labelIDs)
+	if !s.labelsBelongToProjectLocked(task.ProjectID, labelIDs) {
+		return Task{}, ErrInvalid
+	}
 	if title != "" {
 		task.Title = title
 	}
@@ -598,10 +668,38 @@ func (s *Store) UpdateTask(id, actorID, title, description, status, priority, as
 	task.Status = status
 	task.Priority = priority
 	task.AssigneeID = assigneeID
+	task.LabelIDs = labelIDs
 	task.DueDate = dueDate
 	task.UpdatedAt = time.Now().UTC()
 	s.data.Tasks[id] = task
 	return task, s.persistLocked()
+}
+
+func (s *Store) labelsBelongToProjectLocked(projectID string, labelIDs []string) bool {
+	for _, labelID := range labelIDs {
+		label, ok := s.data.Labels[labelID]
+		if !ok || label.ProjectID != projectID {
+			return false
+		}
+	}
+	return true
+}
+
+func normalizeIDs(ids []string) []string {
+	normalized := make([]string, 0, len(ids))
+	seen := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		normalized = append(normalized, id)
+	}
+	return normalized
 }
 
 func (s *Store) DeleteTask(id, actorID string) error {

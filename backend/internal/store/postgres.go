@@ -97,6 +97,19 @@ CREATE TABLE IF NOT EXISTS tasks (
     updated_at TIMESTAMPTZ NOT NULL
 );
 CREATE INDEX IF NOT EXISTS tasks_project_id_idx ON tasks (project_id);
+CREATE TABLE IF NOT EXISTS project_labels (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    color TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS project_labels_name_idx ON project_labels (project_id, LOWER(name));
+CREATE TABLE IF NOT EXISTS task_labels (
+    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    label_id TEXT NOT NULL REFERENCES project_labels(id) ON DELETE CASCADE,
+    PRIMARY KEY (task_id, label_id)
+);
 CREATE INDEX IF NOT EXISTS project_members_user_id_idx ON project_members (user_id);
 
 CREATE TABLE IF NOT EXISTS restaurant_leads (
@@ -173,10 +186,18 @@ func scanProject(row rowScanner) (Project, error) {
 
 func scanTask(row rowScanner) (Task, error) {
 	var task Task
-	if err := row.Scan(&task.ID, &task.ProjectID, &task.Title, &task.Description, &task.Status, &task.Priority, &task.AssigneeID, &task.DueDate, &task.CreatedBy, &task.CreatedAt, &task.UpdatedAt); err != nil {
+	if err := row.Scan(&task.ID, &task.ProjectID, &task.Title, &task.Description, &task.Status, &task.Priority, &task.AssigneeID, &task.DueDate, &task.CreatedBy, &task.CreatedAt, &task.UpdatedAt, &task.LabelIDs); err != nil {
 		return Task{}, translatePostgresError(err)
 	}
 	return task, nil
+}
+
+func scanLabel(row rowScanner) (Label, error) {
+	var label Label
+	if err := row.Scan(&label.ID, &label.ProjectID, &label.Name, &label.Color, &label.CreatedAt); err != nil {
+		return Label{}, translatePostgresError(err)
+	}
+	return label, nil
 }
 
 func scanLead(row rowScanner) (Lead, error) {
@@ -804,11 +825,59 @@ RETURNING id, lead_id, author_id, type, body, status_after, created_at`, newID()
 func taskSelectQuery() string {
 	return `
 SELECT id, project_id, title, description, status, priority,
-       COALESCE(assignee_id, ''), COALESCE(due_date, ''), created_by, created_at, updated_at
+       COALESCE(assignee_id, ''), COALESCE(due_date, ''), created_by, created_at, updated_at,
+       ARRAY(SELECT label_id FROM task_labels WHERE task_id = tasks.id ORDER BY label_id)
 FROM tasks`
 }
 
-func (s *PostgresStore) CreateTask(projectID, creatorID, title, description, status, priority, assigneeID, dueDate string) (Task, error) {
+func labelSelectQuery() string {
+	return `SELECT id, project_id, name, color, created_at FROM project_labels`
+}
+
+func (s *PostgresStore) LabelsByProject(projectID string) []Label {
+	rows, err := s.pool.Query(context.Background(), labelSelectQuery()+` WHERE project_id = $1 ORDER BY LOWER(name), id`, projectID)
+	if err != nil {
+		return []Label{}
+	}
+	defer rows.Close()
+	labels := make([]Label, 0)
+	for rows.Next() {
+		label, scanErr := scanLabel(rows)
+		if scanErr == nil {
+			labels = append(labels, label)
+		}
+	}
+	return labels
+}
+
+func (s *PostgresStore) CreateLabel(projectID, actorID, name, color string) (Label, error) {
+	role, err := s.projectMemberRole(projectID, actorID)
+	if err != nil {
+		return Label{}, err
+	}
+	if role == MemberRoleViewer {
+		return Label{}, ErrReadOnly
+	}
+	label := Label{ID: newID(), ProjectID: projectID, Name: name, Color: color, CreatedAt: time.Now().UTC()}
+	_, err = s.pool.Exec(context.Background(), `
+INSERT INTO project_labels (id, project_id, name, color, created_at)
+VALUES ($1, $2, $3, $4, $5)`, label.ID, label.ProjectID, label.Name, label.Color, label.CreatedAt)
+	if err != nil {
+		return Label{}, translatePostgresError(err)
+	}
+	return label, nil
+}
+
+func (s *PostgresStore) labelsBelongToProject(projectID string, labelIDs []string) bool {
+	if len(labelIDs) == 0 {
+		return true
+	}
+	var count int
+	err := s.pool.QueryRow(context.Background(), `SELECT COUNT(*) FROM project_labels WHERE project_id = $1 AND id = ANY($2)`, projectID, labelIDs).Scan(&count)
+	return err == nil && count == len(labelIDs)
+}
+
+func (s *PostgresStore) CreateTask(projectID, creatorID, title, description, status, priority, assigneeID, dueDate string, labelIDs []string) (Task, error) {
 	if _, err := s.projectOwner(projectID); err != nil {
 		return Task{}, err
 	}
@@ -825,12 +894,37 @@ func (s *PostgresStore) CreateTask(projectID, creatorID, title, description, sta
 	if assigneeID != "" && !s.projectMemberExists(projectID, assigneeID) {
 		return Task{}, ErrNotMember
 	}
+	labelIDs = normalizeIDs(labelIDs)
+	if !s.labelsBelongToProject(projectID, labelIDs) {
+		return Task{}, ErrInvalid
+	}
 	now := time.Now().UTC()
-	query := `
+	ctx := context.Background()
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Task{}, fmt.Errorf("iniciar criação de tarefa: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	taskID := newID()
+	_, err = tx.Exec(ctx, `
 INSERT INTO tasks (id, project_id, title, description, status, priority, assignee_id, due_date, created_by, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-RETURNING id, project_id, title, description, status, priority, COALESCE(assignee_id, ''), COALESCE(due_date, ''), created_by, created_at, updated_at`
-	return scanTask(s.pool.QueryRow(context.Background(), query, newID(), projectID, title, description, status, priority, nullableString(assigneeID), dueDate, creatorID, now, now))
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`, taskID, projectID, title, description, status, priority, nullableString(assigneeID), dueDate, creatorID, now, now)
+	if err != nil {
+		return Task{}, translatePostgresError(err)
+	}
+	for _, labelID := range labelIDs {
+		if _, err := tx.Exec(ctx, `INSERT INTO task_labels (task_id, label_id) VALUES ($1, $2)`, taskID, labelID); err != nil {
+			return Task{}, translatePostgresError(err)
+		}
+	}
+	task, err := scanTask(tx.QueryRow(ctx, taskSelectQuery()+` WHERE id = $1`, taskID))
+	if err != nil {
+		return Task{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Task{}, fmt.Errorf("confirmar criação de tarefa: %w", err)
+	}
+	return task, nil
 }
 
 func (s *PostgresStore) TasksByProject(projectID string) []Task {
@@ -861,7 +955,7 @@ func (s *PostgresStore) TaskByID(id string) (Task, error) {
 	return scanTask(s.pool.QueryRow(context.Background(), taskSelectQuery()+` WHERE id = $1`, id))
 }
 
-func (s *PostgresStore) UpdateTask(id, actorID, title, description, status, priority, assigneeID, dueDate string) (Task, error) {
+func (s *PostgresStore) UpdateTask(id, actorID, title, description, status, priority, assigneeID, dueDate string, labelIDs []string) (Task, error) {
 	var projectID string
 	if err := s.pool.QueryRow(context.Background(), `SELECT project_id FROM tasks WHERE id = $1`, id).Scan(&projectID); err != nil {
 		return Task{}, translatePostgresError(err)
@@ -879,13 +973,40 @@ func (s *PostgresStore) UpdateTask(id, actorID, title, description, status, prio
 	if assigneeID != "" && !s.projectMemberExists(projectID, assigneeID) {
 		return Task{}, ErrNotMember
 	}
-	query := `
+	labelIDs = normalizeIDs(labelIDs)
+	if !s.labelsBelongToProject(projectID, labelIDs) {
+		return Task{}, ErrInvalid
+	}
+	ctx := context.Background()
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Task{}, fmt.Errorf("iniciar atualização de tarefa: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	_, err = tx.Exec(ctx, `
 UPDATE tasks
 SET title = CASE WHEN $2 <> '' THEN $2 ELSE title END,
     description = $3, status = $4, priority = $5, assignee_id = $6, due_date = $7, updated_at = $8
-WHERE id = $1
-RETURNING id, project_id, title, description, status, priority, COALESCE(assignee_id, ''), COALESCE(due_date, ''), created_by, created_at, updated_at`
-	return scanTask(s.pool.QueryRow(context.Background(), query, id, title, description, status, priority, nullableString(assigneeID), dueDate, time.Now().UTC()))
+WHERE id = $1`, id, title, description, status, priority, nullableString(assigneeID), dueDate, time.Now().UTC())
+	if err != nil {
+		return Task{}, translatePostgresError(err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM task_labels WHERE task_id = $1`, id); err != nil {
+		return Task{}, translatePostgresError(err)
+	}
+	for _, labelID := range labelIDs {
+		if _, err := tx.Exec(ctx, `INSERT INTO task_labels (task_id, label_id) VALUES ($1, $2)`, id, labelID); err != nil {
+			return Task{}, translatePostgresError(err)
+		}
+	}
+	updated, err := scanTask(tx.QueryRow(ctx, taskSelectQuery()+` WHERE id = $1`, id))
+	if err != nil {
+		return Task{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Task{}, fmt.Errorf("confirmar atualização de tarefa: %w", err)
+	}
+	return updated, nil
 }
 
 func (s *PostgresStore) DeleteTask(id, actorID string) error {

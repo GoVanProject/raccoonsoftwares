@@ -61,6 +61,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/projects/{projectID}/room/ws", s.roomWebSocket)
 	mux.HandleFunc("GET /api/projects/{projectID}/tasks", s.requireAuth(s.listTasks))
 	mux.HandleFunc("POST /api/projects/{projectID}/tasks", s.requireAuth(s.createTask))
+	mux.HandleFunc("GET /api/projects/{projectID}/labels", s.requireAuth(s.listLabels))
+	mux.HandleFunc("POST /api/projects/{projectID}/labels", s.requireAuth(s.createLabel))
 	mux.HandleFunc("GET /api/projects/{projectID}/leads", s.requireAuth(s.listLeads))
 	mux.HandleFunc("POST /api/projects/{projectID}/leads", s.requireAuth(s.createLead))
 	mux.HandleFunc("POST /api/projects/{projectID}/leads/import", s.requireAuth(s.importLeads))
@@ -451,21 +453,68 @@ func (s *Server) removeMember(w http.ResponseWriter, r *http.Request, userID str
 }
 
 type taskRequest struct {
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Status      string `json:"status"`
-	Priority    string `json:"priority"`
-	AssigneeID  string `json:"assignee_id"`
-	DueDate     string `json:"due_date"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	Status      string   `json:"status"`
+	Priority    string   `json:"priority"`
+	AssigneeID  string   `json:"assignee_id"`
+	DueDate     string   `json:"due_date"`
+	LabelIDs    []string `json:"label_ids"`
 }
 
 type taskUpdateRequest struct {
-	Title       *string `json:"title"`
-	Description *string `json:"description"`
-	Status      *string `json:"status"`
-	Priority    *string `json:"priority"`
-	AssigneeID  *string `json:"assignee_id"`
-	DueDate     *string `json:"due_date"`
+	Title       *string   `json:"title"`
+	Description *string   `json:"description"`
+	Status      *string   `json:"status"`
+	Priority    *string   `json:"priority"`
+	AssigneeID  *string   `json:"assignee_id"`
+	DueDate     *string   `json:"due_date"`
+	LabelIDs    *[]string `json:"label_ids"`
+}
+
+type labelRequest struct {
+	Name  string `json:"name"`
+	Color string `json:"color"`
+}
+
+func (s *Server) listLabels(w http.ResponseWriter, r *http.Request, userID string) {
+	project, err := s.store.ProjectByID(r.PathValue("projectID"))
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if !projectAccessible(project, userID) {
+		writeError(w, http.StatusForbidden, "você não tem acesso a este projeto")
+		return
+	}
+	labels := s.store.LabelsByProject(project.ID)
+	sort.Slice(labels, func(i, j int) bool {
+		return strings.ToLower(labels[i].Name) < strings.ToLower(labels[j].Name)
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"labels": labels})
+}
+
+func (s *Server) createLabel(w http.ResponseWriter, r *http.Request, userID string) {
+	var request labelRequest
+	if !readJSON(w, r, &request) {
+		return
+	}
+	request.Name = strings.TrimSpace(request.Name)
+	request.Color = strings.TrimSpace(request.Color)
+	if request.Name == "" || len(request.Name) > 40 {
+		writeError(w, http.StatusBadRequest, "o nome da etiqueta é obrigatório e deve ter até 40 caracteres")
+		return
+	}
+	if !oneOf(request.Color, "blue", "purple", "green", "orange", "red", "cyan", "gray") {
+		writeError(w, http.StatusBadRequest, "cor de etiqueta inválida")
+		return
+	}
+	label, err := s.store.CreateLabel(r.PathValue("projectID"), userID, request.Name, request.Color)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"label": label})
 }
 
 func (s *Server) listTasks(w http.ResponseWriter, r *http.Request, userID string) {
@@ -504,7 +553,7 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request, userID strin
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	task, err := s.store.CreateTask(r.PathValue("projectID"), userID, request.Title, request.Description, request.Status, request.Priority, request.AssigneeID, request.DueDate)
+	task, err := s.store.CreateTask(r.PathValue("projectID"), userID, request.Title, request.Description, request.Status, request.Priority, request.AssigneeID, request.DueDate, request.LabelIDs)
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -541,6 +590,7 @@ func (s *Server) updateTask(w http.ResponseWriter, r *http.Request, userID strin
 		return
 	}
 	title, description, status, priority, assigneeID, dueDate := task.Title, task.Description, task.Status, task.Priority, task.AssigneeID, task.DueDate
+	labelIDs := task.LabelIDs
 	if request.Title != nil {
 		title = strings.TrimSpace(*request.Title)
 	}
@@ -559,11 +609,14 @@ func (s *Server) updateTask(w http.ResponseWriter, r *http.Request, userID strin
 	if request.DueDate != nil {
 		dueDate = strings.TrimSpace(*request.DueDate)
 	}
+	if request.LabelIDs != nil {
+		labelIDs = *request.LabelIDs
+	}
 	if err := validateTask(title, description, status, priority, dueDate); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	updated, err := s.store.UpdateTask(task.ID, userID, title, description, status, priority, assigneeID, dueDate)
+	updated, err := s.store.UpdateTask(task.ID, userID, title, description, status, priority, assigneeID, dueDate, labelIDs)
 	if err != nil {
 		writeStoreError(w, err)
 		return

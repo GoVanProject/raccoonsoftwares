@@ -4,6 +4,9 @@ node_modules/
 # Builds e arquivos gerados pelo Next.js
 .next/
 out/
+tsconfig.tsbuildinfo
+playwright-report/
+test-results/
 backend/data/
 
 # Variáveis de ambiente e configurações locais

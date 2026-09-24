@@ -1,10 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { ChangeEvent, FormEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { AuthShell } from "@/components/auth/auth-shell";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ShimmerButton } from "@/components/ui/shimmer-button";
 import { taskboardFetch } from "../lib/taskboard";
+import { saveTaskboardToken } from "../lib/use-taskboard-token";
 
 type AuthResponse = { token: string };
 
@@ -64,41 +70,143 @@ export default function RegisterPage() {
     }
     setLoading(true);
     try {
-      const response = await taskboardFetch<AuthResponse>("/api/auth/register", undefined, {
-        method: "POST",
-        body: JSON.stringify({ alias: alias.trim(), email, password, password_confirmation: passwordConfirmation, avatar_data: avatarData || undefined }),
-      });
-      window.localStorage.setItem("taskboard_token", response.token);
+      const response = await taskboardFetch<AuthResponse>(
+        "/api/auth/register",
+        undefined,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            alias: alias.trim(),
+            email,
+            password,
+            password_confirmation: passwordConfirmation,
+            avatar_data: avatarData || undefined,
+          }),
+        },
+      );
+      saveTaskboardToken(response.token);
       router.push("/workspace");
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Não foi possível criar o usuário.");
+      setError(
+        submitError instanceof Error
+          ? submitError.message
+          : "Não foi possível criar o usuário.",
+      );
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <main className="auth-page">
-      <section className="auth-card register-card">
-        <Link className="auth-brand" href="/">🦝 <span>RaccoonSoftwares</span></Link>
-        <div className="auth-kicker">Comece agora</div>
-        <h1>Crie seu workspace.</h1>
-        <p className="auth-intro">Monte seu perfil e entre no workspace com a sua equipe.</p>
-        <form className="auth-form" onSubmit={handleSubmit}>
-          <label>Nome ou alias<input type="text" autoComplete="nickname" maxLength={60} value={alias} onChange={(event) => setAlias(event.target.value)} placeholder="Como a equipe deve chamar você" required /></label>
-          <label>Email<input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="voce@empresa.com" required /></label>
-          <label>Senha<input type="password" autoComplete="new-password" minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Pelo menos 8 caracteres" required /></label>
-          <label>Confirmar senha<input type="password" autoComplete="new-password" minLength={8} value={passwordConfirmation} onChange={(event) => setPasswordConfirmation(event.target.value)} placeholder="Digite a senha novamente" required /></label>
-          <div className="avatar-picker">
-            <div className="avatar-picker-copy"><span>Foto do perfil <small>Opcional</small></span><small>GIF, PNG ou JPG · até 512 KB</small></div>
-            {avatarData ? <div className="avatar-preview"><img src={avatarData} alt="Prévia da foto do perfil" /><span>{avatarName}</span><button type="button" onClick={removeAvatar}>Remover</button></div> : <label className="avatar-upload"><span>Adicionar foto</span><small>Escolher arquivo</small><input ref={avatarInput} type="file" accept="image/gif,image/png,image/jpeg" onChange={handleAvatarChange} aria-label="Foto do perfil" /></label>}
+    <AuthShell
+      kicker="Comece agora"
+      title="Crie seu workspace."
+      description="Monte seu perfil e entre no workspace com a sua equipe."
+      footer={
+        <p>
+          Já tem uma conta? <Link href="/login">Entrar</Link>
+        </p>
+      }
+    >
+      <form className="auth-v2-form" onSubmit={handleSubmit}>
+        <div>
+          <Label htmlFor="register-alias">Nome ou alias</Label>
+          <Input
+            id="register-alias"
+            type="text"
+            autoComplete="nickname"
+            maxLength={60}
+            value={alias}
+            onChange={(event) => setAlias(event.target.value)}
+            placeholder="Como a equipe deve chamar você"
+            required
+          />
+        </div>
+        <div>
+          <Label htmlFor="register-email">Email</Label>
+          <Input
+            id="register-email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="voce@empresa.com"
+            required
+          />
+        </div>
+        <div className="auth-v2-passwords">
+          <div>
+            <Label htmlFor="register-password">Senha</Label>
+            <Input
+              id="register-password"
+              type="password"
+              autoComplete="new-password"
+              minLength={8}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="Pelo menos 8 caracteres"
+              required
+            />
           </div>
-          {error ? <p className="form-error" role="alert">{error}</p> : null}
-          <button className="auth-submit" type="submit" disabled={loading}>{loading ? "Criando..." : "Criar conta"}</button>
-        </form>
-        <p className="auth-switch">Já tem uma conta? <Link href="/login">Entrar</Link></p>
-        <Link className="auth-back" href="/">← Voltar para o site</Link>
-      </section>
-    </main>
+          <div>
+            <Label htmlFor="register-confirmation">Confirmar senha</Label>
+            <Input
+              id="register-confirmation"
+              type="password"
+              autoComplete="new-password"
+              minLength={8}
+              value={passwordConfirmation}
+              onChange={(event) => setPasswordConfirmation(event.target.value)}
+              placeholder="Digite novamente"
+              required
+            />
+          </div>
+        </div>
+        <div className="auth-v2-avatar">
+          <div>
+            <Label htmlFor="register-avatar">
+              Foto do perfil <small>Opcional</small>
+            </Label>
+            <span>GIF, PNG ou JPG · até 512 KB</span>
+          </div>
+          {avatarData ? (
+            <div className="auth-v2-preview">
+              <Image src={avatarData} alt="Prévia da foto do perfil" width={48} height={48} unoptimized />
+              <span>{avatarName}</span>
+              <button type="button" onClick={removeAvatar}>
+                Remover
+              </button>
+            </div>
+          ) : (
+            <label className="auth-v2-upload" htmlFor="register-avatar">
+              <span>Adicionar foto</span>
+              <small>Escolher arquivo</small>
+              <input
+                id="register-avatar"
+                ref={avatarInput}
+                type="file"
+                accept="image/gif,image/png,image/jpeg"
+                onChange={handleAvatarChange}
+              />
+            </label>
+          )}
+        </div>
+        {error ? (
+          <p className="auth-v2-error" role="alert">
+            {error}
+          </p>
+        ) : null}
+        <ShimmerButton
+          className="auth-v2-submit"
+          type="submit"
+          disabled={loading}
+          aria-busy={loading}
+          background="#3278FF"
+          borderRadius="10px"
+        >
+          {loading ? "Criando…" : "Criar conta"}
+        </ShimmerButton>
+      </form>
+    </AuthShell>
   );
 }

@@ -1,6 +1,16 @@
 import type { Metadata } from "next";
+import { GeistSans } from "geist/font/sans";
+import "./styles/tokens.css";
 import "./globals.css";
+import "./styles/workspace.css";
+import "./styles/landing.css";
+import "./styles/workspace-overrides.css";
+import "./styles/tailwind.css";
+import "./styles/workspace-v2.css";
+import "./task-labels.css";
+import "./workspace-interactions.css";
 import "leaflet/dist/leaflet.css";
+import { Providers } from "./providers";
 
 export const metadata: Metadata = {
   title: "IA e automação para negócios de serviços | RaccoonSoftwares",
@@ -43,8 +53,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pt-BR" data-theme="light">
-      <body>{children}</body>
+    <html lang="pt-BR" data-theme="light" suppressHydrationWarning>
+      <body className={GeistSans.variable}><Providers>{children}</Providers></body>
     </html>
   );
 }

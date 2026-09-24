@@ -1,15 +1,36 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowsIn,
+  ArrowsOut,
+  Microphone,
+  MicrophoneSlash,
+  Monitor,
+  Users,
+} from "@phosphor-icons/react";
 
 import { API_URL, taskboardFetch } from "../../../lib/taskboard";
-import { WorkspaceAvatarStack, WorkspaceRail } from "../../components/workspace-ui";
+import { useTaskboardToken } from "../../../lib/use-taskboard-token";
+import { WorkspaceAvatarStack, WorkspaceIcon } from "../../components/workspace-ui";
 
 type Project = { id: string; name: string; description: string };
-type RoomPeer = { id: string; alias?: string; email: string; avatar_data?: string; publishing: boolean; mic_enabled: boolean };
-type RoomTicket = { ticket: string; expires_at: string; ice_servers: RTCIceServer[] };
+type RoomPeer = {
+  id: string;
+  alias?: string;
+  email: string;
+  avatar_data?: string;
+  publishing: boolean;
+  mic_enabled: boolean;
+};
+type RoomTicket = {
+  ticket: string;
+  expires_at: string;
+  ice_servers: RTCIceServer[];
+};
 type SignalDescription = { type: RTCSdpType; sdp?: string };
 type SignalPayload =
   | { kind: "description"; description: SignalDescription }
@@ -27,19 +48,13 @@ type PeerConnectionState = {
 
 const ROOM_PROTOCOL = "raccoon-room-v1";
 
-type RoomIconName = "mic" | "micOff" | "fullscreen" | "exitFullscreen" | "screen" | "users";
+type RoomIconName =
+  "mic" | "micOff" | "fullscreen" | "exitFullscreen" | "screen" | "users";
 
 function RoomIcon({ name }: { name: RoomIconName }) {
-  const paths: Record<RoomIconName, ReactNode> = {
-    mic: <><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7" /></>,
-    micOff: <><path d="m4 4 16 16" /><path d="M9 9v5a3 3 0 0 0 5.2 2.05M15 9V6a3 3 0 0 0-5.2-2.05" /><path d="M5.5 11a6.5 6.5 0 0 0 9.2 5.9M12 17.5V21M8.5 21h7" /></>,
-    fullscreen: <><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M21 16v5h-5" /></>,
-    exitFullscreen: <><path d="M9 3v6H3M15 3v6h6M9 21v-6H3M15 21v-6h6" /></>,
-    screen: <><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8M12 17v4" /></>,
-    users: <><path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20" /><circle cx="10" cy="8" r="3" /><path d="M16 11a3 3 0 0 0 0-6M19.5 20v-1.5a3.5 3.5 0 0 0-2.5-3.35" /></>,
-  };
-
-  return <svg className="room-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
+  const icons = { mic: Microphone, micOff: MicrophoneSlash, fullscreen: ArrowsOut, exitFullscreen: ArrowsIn, screen: Monitor, users: Users };
+  const Icon = icons[name];
+  return <Icon className="room-icon" aria-hidden="true" />;
 }
 
 function socketURL(path: string) {
@@ -57,33 +72,54 @@ function initials(email: string, alias?: string) {
   return displayName(email, alias).slice(0, 2).toUpperCase();
 }
 
-function RoomVideo({ stream, label, muted = false }: { stream: MediaStream; label: string; muted?: boolean }) {
+function RoomVideo({
+  stream,
+  label,
+  muted = false,
+}: {
+  stream: MediaStream;
+  label: string;
+  muted?: boolean;
+}) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    if (!videoRef.current) return;
-    videoRef.current.srcObject = stream;
-    videoRef.current.muted = muted;
-    void videoRef.current.play().catch(() => undefined);
+    const video = videoRef.current;
+    if (!video) return;
+    video.srcObject = stream;
+    video.muted = muted;
+    void video.play().catch(() => undefined);
     return () => {
-      if (videoRef.current) videoRef.current.srcObject = null;
+      video.srcObject = null;
     };
-  }, [stream]);
+  }, [muted, stream]);
 
-  return <video ref={videoRef} className="room-video" autoPlay playsInline muted={muted} aria-label={`Tela compartilhada por ${label}`} />;
+  return (
+    <video
+      ref={videoRef}
+      className="room-video"
+      autoPlay
+      playsInline
+      muted={muted}
+      aria-label={`Tela compartilhada por ${label}`}
+    />
+  );
 }
 
 export default function RoomPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const router = useRouter();
-  const [token, setToken] = useState<string | null>(null);
+  const { token, ready, clearToken } = useTaskboardToken();
   const [project, setProject] = useState<Project | null>(null);
   const [selfID, setSelfID] = useState("");
   const [peers, setPeers] = useState<RoomPeer[]>([]);
   const [selfPeer, setSelfPeer] = useState<RoomPeer | null>(null);
-  const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
-  const [iceServers, setIceServers] = useState<RTCIceServer[]>([]);
-  const [status, setStatus] = useState<"loading" | "connected" | "reconnecting" | "disconnected">("loading");
+  const [remoteStreams, setRemoteStreams] = useState<
+    Record<string, MediaStream>
+  >({});
+  const [status, setStatus] = useState<
+    "loading" | "connected" | "reconnecting" | "disconnected"
+  >("loading");
   const [error, setError] = useState("");
   const [isSharing, setIsSharing] = useState(false);
   const [localScreen, setLocalScreen] = useState<MediaStream | null>(null);
@@ -91,7 +127,6 @@ export default function RoomPage() {
   const [isPublishPending, setIsPublishPending] = useState(false);
   const [includeScreenAudio, setIncludeScreenAudio] = useState(true);
   const [fullscreenTile, setFullscreenTile] = useState<string | null>(null);
-  const [railExpanded, setRailExpanded] = useState(false);
 
   const socketRef = useRef<WebSocket | null>(null);
   const mountedRef = useRef(true);
@@ -102,12 +137,24 @@ export default function RoomPage() {
   const selfIDRef = useRef("");
   const iceServersRef = useRef<RTCIceServer[]>([]);
   const peersRef = useRef<RoomPeer[]>([]);
-  const peerConnectionsRef = useRef<Map<string, PeerConnectionState>>(new Map());
+  const peerConnectionsRef = useRef<Map<string, PeerConnectionState>>(
+    new Map(),
+  );
   const remoteStreamsRef = useRef<Map<string, MediaStream>>(new Map());
   const localScreenRef = useRef<MediaStream | null>(null);
   const localMicRef = useRef<MediaStream | null>(null);
   const tileRefs = useRef<Record<string, HTMLElement | null>>({});
-  const publishRequestRef = useRef<{ resolve: () => void; reject: (reason: Error) => void } | null>(null);
+  const publishRequestRef = useRef<{
+    resolve: () => void;
+    reject: (reason: Error) => void;
+  } | null>(null);
+  const roomCallbacksRef = useRef<{
+    connect: () => Promise<void>;
+    cleanup: () => void;
+  }>({
+    connect: async () => undefined,
+    cleanup: () => undefined,
+  });
 
   function updatePeers(update: (current: RoomPeer[]) => RoomPeer[]) {
     setPeers((current) => {
@@ -144,7 +191,8 @@ export default function RoomPage() {
   }
 
   function resetPeerConnections() {
-    for (const peerID of peerConnectionsRef.current.keys()) closePeerConnection(peerID);
+    for (const peerID of peerConnectionsRef.current.keys())
+      closePeerConnection(peerID);
     peerConnectionsRef.current.clear();
     setRemoteStreams({});
   }
@@ -158,31 +206,55 @@ export default function RoomPage() {
     setIsSharing(false);
     setIsMicEnabled(false);
     setIsPublishPending(false);
-    publishRequestRef.current?.reject(new Error("A conexão com a sala foi encerrada."));
+    publishRequestRef.current?.reject(
+      new Error("A conexão com a sala foi encerrada."),
+    );
     publishRequestRef.current = null;
   }
 
   async function replaceLocalTracks() {
     const videoTrack = localScreenRef.current?.getVideoTracks()[0] || null;
-    const screenAudioTrack = localScreenRef.current?.getAudioTracks()[0] || null;
+    const screenAudioTrack =
+      localScreenRef.current?.getAudioTracks()[0] || null;
     const micTrack = localMicRef.current?.getAudioTracks()[0] || null;
-    await Promise.all(Array.from(peerConnectionsRef.current.values()).map(async (connection) => {
-      await connection.videoSender.replaceTrack(videoTrack);
-      await connection.screenAudioSender.replaceTrack(screenAudioTrack);
-      await connection.micSender.replaceTrack(micTrack);
-    }));
+    await Promise.all(
+      Array.from(peerConnectionsRef.current.values()).map(
+        async (connection) => {
+          await connection.videoSender.replaceTrack(videoTrack);
+          await connection.screenAudioSender.replaceTrack(screenAudioTrack);
+          await connection.micSender.replaceTrack(micTrack);
+        },
+      ),
+    );
   }
 
-  async function negotiatePeer(peerID: string, connection: PeerConnectionState) {
+  async function negotiatePeer(
+    peerID: string,
+    connection: PeerConnectionState,
+  ) {
     try {
       connection.makingOffer = true;
-      await connection.pc.setLocalDescription(await connection.pc.createOffer());
+      await connection.pc.setLocalDescription(
+        await connection.pc.createOffer(),
+      );
       if (connection.pc.localDescription) {
-        const description: SignalDescription = { type: connection.pc.localDescription.type, sdp: connection.pc.localDescription.sdp };
-        sendRoomMessage({ target: peerID, type: "signal", signal: { kind: "description", description } });
+        const description: SignalDescription = {
+          type: connection.pc.localDescription.type,
+          sdp: connection.pc.localDescription.sdp,
+        };
+        sendRoomMessage({
+          target: peerID,
+          type: "signal",
+          signal: { kind: "description", description },
+        });
       }
     } catch (reason) {
-      if (mountedRef.current) setError(reason instanceof Error ? reason.message : "Não foi possível negociar a conexão.");
+      if (mountedRef.current)
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : "Não foi possível negociar a conexão.",
+        );
     } finally {
       connection.makingOffer = false;
     }
@@ -193,9 +265,15 @@ export default function RoomPage() {
     if (existing) return existing;
 
     const pc = new RTCPeerConnection({ iceServers: iceServersRef.current });
-    const videoSender = pc.addTransceiver("video", { direction: "sendrecv" }).sender;
-    const screenAudioSender = pc.addTransceiver("audio", { direction: "sendrecv" }).sender;
-    const micSender = pc.addTransceiver("audio", { direction: "sendrecv" }).sender;
+    const videoSender = pc.addTransceiver("video", {
+      direction: "sendrecv",
+    }).sender;
+    const screenAudioSender = pc.addTransceiver("audio", {
+      direction: "sendrecv",
+    }).sender;
+    const micSender = pc.addTransceiver("audio", {
+      direction: "sendrecv",
+    }).sender;
     const connection: PeerConnectionState = {
       pc,
       videoSender,
@@ -210,25 +288,38 @@ export default function RoomPage() {
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        sendRoomMessage({ target: peer.id, type: "signal", signal: { kind: "ice", candidate: event.candidate.toJSON() } });
+        sendRoomMessage({
+          target: peer.id,
+          type: "signal",
+          signal: { kind: "ice", candidate: event.candidate.toJSON() },
+        });
       }
     };
     pc.ontrack = (event) => {
       const stream = remoteStreamsRef.current.get(peer.id) || new MediaStream();
-      if (!stream.getTracks().some((track) => track.id === event.track.id)) stream.addTrack(event.track);
+      if (!stream.getTracks().some((track) => track.id === event.track.id))
+        stream.addTrack(event.track);
       remoteStreamsRef.current.set(peer.id, stream);
       setRemoteStreams((current) => ({ ...current, [peer.id]: stream }));
       event.track.onended = () => {
-        if (stream.getTracks().some((track) => track.readyState === "live")) return;
+        if (stream.getTracks().some((track) => track.readyState === "live"))
+          return;
         removeRemoteStream(peer.id);
       };
     };
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "failed" || pc.connectionState === "closed") closePeerConnection(peer.id);
+      if (pc.connectionState === "failed" || pc.connectionState === "closed")
+        closePeerConnection(peer.id);
     };
-    pc.onnegotiationneeded = () => { void negotiatePeer(peer.id, connection); };
+    pc.onnegotiationneeded = () => {
+      void negotiatePeer(peer.id, connection);
+    };
 
-    if (shouldOffer) setTimeout(() => { if (pc.signalingState === "stable") void negotiatePeer(peer.id, connection); }, 0);
+    if (shouldOffer)
+      setTimeout(() => {
+        if (pc.signalingState === "stable")
+          void negotiatePeer(peer.id, connection);
+      }, 0);
     return connection;
   }
 
@@ -238,7 +329,9 @@ export default function RoomPage() {
     const connection = ensurePeerConnection(peer);
     if (signal.kind === "ice") {
       if (connection.pc.remoteDescription) {
-        await connection.pc.addIceCandidate(signal.candidate).catch(() => undefined);
+        await connection.pc
+          .addIceCandidate(signal.candidate)
+          .catch(() => undefined);
       } else {
         connection.pendingCandidates.push(signal.candidate);
       }
@@ -246,7 +339,9 @@ export default function RoomPage() {
     }
 
     const description = signal.description;
-    const offerCollision = description.type === "offer" && (connection.makingOffer || connection.pc.signalingState !== "stable");
+    const offerCollision =
+      description.type === "offer" &&
+      (connection.makingOffer || connection.pc.signalingState !== "stable");
     connection.ignoreOffer = !connection.polite && offerCollision;
     if (connection.ignoreOffer) return;
     try {
@@ -257,17 +352,38 @@ export default function RoomPage() {
       if (description.type === "offer") {
         await connection.pc.setLocalDescription();
         if (connection.pc.localDescription) {
-          const answer: SignalDescription = { type: connection.pc.localDescription.type, sdp: connection.pc.localDescription.sdp };
-          sendRoomMessage({ target: peerID, type: "signal", signal: { kind: "description", description: answer } });
+          const answer: SignalDescription = {
+            type: connection.pc.localDescription.type,
+            sdp: connection.pc.localDescription.sdp,
+          };
+          sendRoomMessage({
+            target: peerID,
+            type: "signal",
+            signal: { kind: "description", description: answer },
+          });
         }
       }
     } catch (reason) {
-      if (mountedRef.current) setError(reason instanceof Error ? reason.message : "Não foi possível conectar este participante.");
+      if (mountedRef.current)
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : "Não foi possível conectar este participante.",
+        );
     }
   }
 
   function handleRoomMessage(payload: string) {
-    let message: { type: string; code?: string; message?: string; self_id?: string; peer?: RoomPeer; peers?: RoomPeer[]; from?: string; signal?: SignalPayload };
+    let message: {
+      type: string;
+      code?: string;
+      message?: string;
+      self_id?: string;
+      peer?: RoomPeer;
+      peers?: RoomPeer[];
+      from?: string;
+      signal?: SignalPayload;
+    };
     try {
       message = JSON.parse(payload);
     } catch {
@@ -284,13 +400,18 @@ export default function RoomPage() {
       return;
     }
     if (message.type === "peer_joined" && message.peer) {
-      updatePeers((current) => [...current.filter((peer) => peer.id !== message.peer?.id), message.peer as RoomPeer]);
+      updatePeers((current) => [
+        ...current.filter((peer) => peer.id !== message.peer?.id),
+        message.peer as RoomPeer,
+      ]);
       ensurePeerConnection(message.peer);
       void replaceLocalTracks().catch(() => undefined);
       return;
     }
     if (message.type === "peer_left" && message.peer) {
-      updatePeers((current) => current.filter((peer) => peer.id !== message.peer?.id));
+      updatePeers((current) =>
+        current.filter((peer) => peer.id !== message.peer?.id),
+      );
       closePeerConnection(message.peer.id);
       return;
     }
@@ -300,7 +421,11 @@ export default function RoomPage() {
         setIsMicEnabled(message.peer.mic_enabled);
         setSelfPeer(message.peer);
       } else {
-        updatePeers((current) => current.map((peer) => peer.id === message.peer?.id ? message.peer as RoomPeer : peer));
+        updatePeers((current) =>
+          current.map((peer) =>
+            peer.id === message.peer?.id ? (message.peer as RoomPeer) : peer,
+          ),
+        );
       }
       return;
     }
@@ -312,7 +437,9 @@ export default function RoomPage() {
     }
     if (message.type === "publish_rejected") {
       setIsPublishPending(false);
-      publishRequestRef.current?.reject(new Error(message.message || "Não foi possível compartilhar a tela."));
+      publishRequestRef.current?.reject(
+        new Error(message.message || "Não foi possível compartilhar a tela."),
+      );
       publishRequestRef.current = null;
       return;
     }
@@ -330,37 +457,56 @@ export default function RoomPage() {
   }
 
   async function connectRoom() {
-    if (!token || !projectId || connectingRef.current || leavingRef.current) return;
+    if (!token || !projectId || connectingRef.current || leavingRef.current)
+      return;
     connectingRef.current = true;
     roomUnavailableRef.current = false;
-    setStatus((current) => current === "connected" ? current : "loading");
+    setStatus((current) => (current === "connected" ? current : "loading"));
     setError("");
     try {
-      const projectListResponse = await taskboardFetch<{ projects: Project[] }>("/api/projects", token);
+      const projectListResponse = await taskboardFetch<{ projects: Project[] }>(
+        "/api/projects",
+        token,
+      );
       if (!projectListResponse.projects.some((item) => item.id === projectId)) {
         router.replace("/workspace?error=project-not-found");
         return;
       }
       const [projectResponse, ticketResponse] = await Promise.all([
-        taskboardFetch<{ project: Project }>(`/api/projects/${projectId}`, token),
-        taskboardFetch<RoomTicket>(`/api/projects/${projectId}/room/ticket`, token, { method: "POST" }),
+        taskboardFetch<{ project: Project }>(
+          `/api/projects/${projectId}`,
+          token,
+        ),
+        taskboardFetch<RoomTicket>(
+          `/api/projects/${projectId}/room/ticket`,
+          token,
+          { method: "POST" },
+        ),
       ]);
       if (!mountedRef.current || leavingRef.current) return;
       setProject(projectResponse.project);
-      setIceServers(ticketResponse.ice_servers || []);
       iceServersRef.current = ticketResponse.ice_servers || [];
       resetPeerConnections();
-      const socket = new WebSocket(socketURL(`/api/projects/${projectId}/room/ws`), [ROOM_PROTOCOL, ticketResponse.ticket]);
+      const socket = new WebSocket(
+        socketURL(`/api/projects/${projectId}/room/ws`),
+        [ROOM_PROTOCOL, ticketResponse.ticket],
+      );
       socketRef.current = socket;
       socket.onopen = () => {
         if (mountedRef.current) setStatus("connected");
       };
       socket.onmessage = (event) => handleRoomMessage(event.data);
       socket.onerror = () => {
-        if (mountedRef.current) setError("Não foi possível manter a conexão com a sala.");
+        if (mountedRef.current)
+          setError("Não foi possível manter a conexão com a sala.");
       };
       socket.onclose = () => {
-        if (!mountedRef.current || leavingRef.current || roomUnavailableRef.current) return;
+        if (
+          !mountedRef.current ||
+          leavingRef.current ||
+          roomUnavailableRef.current
+        )
+          return;
         resetPeerConnections();
         stopLocalMedia();
         setStatus("reconnecting");
@@ -373,9 +519,12 @@ export default function RoomPage() {
       };
     } catch (reason) {
       if (!mountedRef.current) return;
-      const message = reason instanceof Error ? reason.message : "Não foi possível abrir a sala.";
+      const message =
+        reason instanceof Error
+          ? reason.message
+          : "Não foi possível abrir a sala.";
       if (message.includes("token")) {
-        window.localStorage.removeItem("taskboard_token");
+        clearToken();
         router.replace("/login");
       } else if (message.includes("acesso") || message.includes("encontrado")) {
         router.replace("/workspace?error=project-not-found");
@@ -389,7 +538,8 @@ export default function RoomPage() {
   }
 
   async function waitForPublishSlot() {
-    if (socketRef.current?.readyState !== WebSocket.OPEN) throw new Error("A sala ainda está conectando.");
+    if (socketRef.current?.readyState !== WebSocket.OPEN)
+      throw new Error("A sala ainda está conectando.");
     setIsPublishPending(true);
     return new Promise<void>((resolve, reject) => {
       publishRequestRef.current = { resolve, reject };
@@ -405,17 +555,26 @@ export default function RoomPage() {
     }
     try {
       await waitForPublishSlot();
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: includeScreenAudio });
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: includeScreenAudio,
+      });
       localScreenRef.current = stream;
       setLocalScreen(stream);
       await replaceLocalTracks();
       setIsSharing(true);
       const videoTrack = stream.getVideoTracks()[0];
-      if (videoTrack) videoTrack.onended = () => { void stopSharing(); };
+      if (videoTrack)
+        videoTrack.onended = () => {
+          void stopSharing();
+        };
     } catch (reason) {
       sendRoomMessage({ type: "publish_stop" });
       setIsPublishPending(false);
-      const message = reason instanceof Error ? reason.message : "Não foi possível compartilhar a tela.";
+      const message =
+        reason instanceof Error
+          ? reason.message
+          : "Não foi possível compartilhar a tela.";
       if (!message.toLowerCase().includes("cancel")) setError(message);
     }
   }
@@ -443,12 +602,18 @@ export default function RoomPage() {
       return;
     }
     try {
-      localMicRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+      localMicRef.current = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+      });
       await replaceLocalTracks();
       sendRoomMessage({ type: "mic_state", enabled: true });
       setIsMicEnabled(true);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Não foi possível acessar o microfone.");
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Não foi possível acessar o microfone.",
+      );
     }
   }
 
@@ -468,95 +633,270 @@ export default function RoomPage() {
     }
   }
 
-  function leaveRoom(destination = `/workspace/${projectId}`) {
-    leavingRef.current = true;
-    if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-    void stopSharing();
-    stopLocalMedia();
-    resetPeerConnections();
-    socketRef.current?.close(1000, "saída da sala");
-    router.push(destination);
-  }
-
-  function logout() {
-    window.localStorage.removeItem("taskboard_token");
-    leaveRoom("/login");
-  }
-
   useEffect(() => {
     function handleFullscreenChange() {
       if (!document.fullscreenElement) setFullscreenTile(null);
     }
     document.addEventListener("fullscreenchange", handleFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    return () =>
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
   useEffect(() => {
-    const storedToken = window.localStorage.getItem("taskboard_token");
-    if (!storedToken) {
-      router.replace("/login");
-      return;
-    }
-    setToken(storedToken);
-  }, [router]);
+    if (!ready) return;
+    if (!token) router.replace("/login");
+  }, [ready, router, token]);
 
   useEffect(() => {
-    if (!token) return;
+    roomCallbacksRef.current = {
+      connect: connectRoom,
+      cleanup: () => {
+        stopLocalMedia();
+        resetPeerConnections();
+      },
+    };
+  });
+
+  useEffect(() => {
+    if (!ready || !token) return;
     mountedRef.current = true;
     leavingRef.current = false;
-    void connectRoom();
+    const roomCallbacks = roomCallbacksRef.current;
+    void roomCallbacks.connect();
     return () => {
       mountedRef.current = false;
       leavingRef.current = true;
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       socketRef.current?.close(1000, "saída da página");
-      stopLocalMedia();
-      resetPeerConnections();
+      roomCallbacks.cleanup();
     };
-  }, [token, projectId]);
+  }, [projectId, ready, token]);
 
-  const remoteTiles = useMemo(() => peers.filter((peer) => peer.publishing && remoteStreams[peer.id]), [peers, remoteStreams]);
-  const participants = useMemo(() => selfPeer ? [selfPeer, ...peers] : peers, [selfPeer, peers]);
+  const remoteTiles = useMemo(
+    () => peers.filter((peer) => peer.publishing && remoteStreams[peer.id]),
+    [peers, remoteStreams],
+  );
+  const participants = useMemo(
+    () => (selfPeer ? [selfPeer, ...peers] : peers),
+    [selfPeer, peers],
+  );
   const sharingCount = remoteTiles.length + (isSharing ? 1 : 0);
-  const statusLabel = status === "connected" ? "Sala conectada" : status === "reconnecting" ? "Reconectando" : status === "loading" ? "Abrindo sala" : "Sala desconectada";
+  const statusLabel =
+    status === "connected"
+      ? "Sala conectada"
+      : status === "reconnecting"
+        ? "Reconectando"
+        : status === "loading"
+          ? "Abrindo sala"
+          : "Sala desconectada";
 
   return (
     <main className="workspace-page room-page">
-      <WorkspaceRail mode="room" projectId={projectId} expanded={railExpanded} onToggleExpanded={() => setRailExpanded((current) => !current)} onLogout={logout} />
       <section className="room-shell">
         <div className="room-heading">
           <div>
-            <Link className="room-back-link" href={`/workspace/${projectId}`}>← Voltar ao quadro</Link>
+            <Link className="room-back-link" href={`/workspace/${projectId}`}>
+              <WorkspaceIcon name="back" /> Voltar ao quadro
+            </Link>
             <span className="workspace-kicker">Sala ao vivo</span>
             <h1>{project?.name || "Sala do projeto"}</h1>
-            <p>Compartilhe uma tela com a equipe e acompanhe até duas transmissões ao mesmo tempo.</p>
+            <p>
+              Compartilhe uma tela com a equipe e acompanhe até duas
+              transmissões ao mesmo tempo.
+            </p>
           </div>
           <div className="room-heading-side">
-            <div className="room-participants-heading"><RoomIcon name="users" /><span>Participantes</span><b>{participants.length}</b></div>
-            <WorkspaceAvatarStack members={participants} max={8} currentId={selfID} label={`${participants.length} participante${participants.length === 1 ? "" : "s"} na sala`} />
-            <div className={`room-status room-status-${status}`}><span />{statusLabel}</div>
+            <div className="room-participants-heading">
+              <RoomIcon name="users" />
+              <span>Participantes</span>
+              <b>{participants.length}</b>
+            </div>
+            <WorkspaceAvatarStack
+              members={participants}
+              max={8}
+              currentId={selfID}
+              label={`${participants.length} participante${participants.length === 1 ? "" : "s"} na sala`}
+            />
+            <div className={`room-status room-status-${status}`}>
+              <span />
+              {statusLabel}
+            </div>
           </div>
         </div>
 
-        {error ? <div className="workspace-error" role="alert">{error}<button type="button" onClick={() => setError("")}>×</button></div> : null}
+        {error ? (
+          <div className="workspace-error" role="alert">
+            {error}
+            <button type="button" onClick={() => setError("")}>
+              <WorkspaceIcon name="close" />
+            </button>
+          </div>
+        ) : null}
 
         <div className="room-grid" aria-live="polite">
-          {isSharing && localScreen ? <article className="room-tile room-tile-local" ref={(element) => { tileRefs.current.local = element; }}>
-            <div className="room-tile-label"><div className="room-tile-meta"><span className="room-tile-avatar">{selfPeer?.avatar_data ? <img className="room-tile-avatar-image" src={selfPeer.avatar_data} alt="" /> : selfPeer ? initials(selfPeer.email, selfPeer.alias) : "EU"}</span><span><strong>Você</strong><small>Transmitindo</small></span></div><button className="room-tile-action" type="button" onClick={() => void toggleTileFullscreen("local")} aria-label={fullscreenTile === "local" ? "Sair da tela cheia" : "Abrir tela compartilhada em tela cheia"} title={fullscreenTile === "local" ? "Sair da tela cheia" : "Tela cheia"}><RoomIcon name={fullscreenTile === "local" ? "exitFullscreen" : "fullscreen"} /></button></div>
-            <RoomVideo stream={localScreen} label="você" muted />
-          </article> : null}
-          {remoteTiles.map((peer) => <article className="room-tile" key={peer.id} ref={(element) => { tileRefs.current[peer.id] = element; }}>
-            <div className="room-tile-label"><div className="room-tile-meta"><span className="room-tile-avatar">{peer.avatar_data ? <img className="room-tile-avatar-image" src={peer.avatar_data} alt="" /> : initials(peer.email, peer.alias)}</span><span><strong>{displayName(peer.email, peer.alias)}</strong><small>{peer.mic_enabled ? "Com áudio" : "Tela compartilhada"}</small></span></div><button className="room-tile-action" type="button" onClick={() => void toggleTileFullscreen(peer.id)} aria-label={fullscreenTile === peer.id ? "Sair da tela cheia" : `Abrir a tela de ${displayName(peer.email, peer.alias)} em tela cheia`} title={fullscreenTile === peer.id ? "Sair da tela cheia" : "Tela cheia"}><RoomIcon name={fullscreenTile === peer.id ? "exitFullscreen" : "fullscreen"} /></button></div>
-            <RoomVideo stream={remoteStreams[peer.id]} label={displayName(peer.email, peer.alias)} />
-          </article>)}
-          {!sharingCount ? <div className="room-empty"><span>▣</span><h2>Ninguém está compartilhando ainda</h2><p>Inicie uma transmissão para apresentar uma tarefa, fluxo ou demonstração ao projeto.</p></div> : null}
+          {isSharing && localScreen ? (
+            <article
+              className="room-tile room-tile-local"
+              ref={(element) => {
+                tileRefs.current.local = element;
+              }}
+            >
+              <div className="room-tile-label">
+                <div className="room-tile-meta">
+                  <span className="room-tile-avatar">
+                    {selfPeer?.avatar_data ? (
+                      <Image
+                        className="room-tile-avatar-image"
+                        src={selfPeer.avatar_data}
+                        alt=""
+                        width={24}
+                        height={24}
+                        unoptimized
+                      />
+                    ) : selfPeer ? (
+                      initials(selfPeer.email, selfPeer.alias)
+                    ) : (
+                      "EU"
+                    )}
+                  </span>
+                  <span>
+                    <strong>Você</strong>
+                    <small>Transmitindo</small>
+                  </span>
+                </div>
+                <button
+                  className="room-tile-action"
+                  type="button"
+                  onClick={() => void toggleTileFullscreen("local")}
+                  aria-label={
+                    fullscreenTile === "local"
+                      ? "Sair da tela cheia"
+                      : "Abrir tela compartilhada em tela cheia"
+                  }
+                >
+                  <RoomIcon
+                    name={
+                      fullscreenTile === "local"
+                        ? "exitFullscreen"
+                        : "fullscreen"
+                    }
+                  />
+                </button>
+              </div>
+              <RoomVideo stream={localScreen} label="você" muted />
+            </article>
+          ) : null}
+          {remoteTiles.map((peer) => (
+            <article
+              className="room-tile"
+              key={peer.id}
+              ref={(element) => {
+                tileRefs.current[peer.id] = element;
+              }}
+            >
+              <div className="room-tile-label">
+                <div className="room-tile-meta">
+                  <span className="room-tile-avatar">
+                    {peer.avatar_data ? (
+                      <Image
+                        className="room-tile-avatar-image"
+                        src={peer.avatar_data}
+                        alt=""
+                        width={24}
+                        height={24}
+                        unoptimized
+                      />
+                    ) : (
+                      initials(peer.email, peer.alias)
+                    )}
+                  </span>
+                  <span>
+                    <strong>{displayName(peer.email, peer.alias)}</strong>
+                    <small>
+                      {peer.mic_enabled ? "Com áudio" : "Tela compartilhada"}
+                    </small>
+                  </span>
+                </div>
+                <button
+                  className="room-tile-action"
+                  type="button"
+                  onClick={() => void toggleTileFullscreen(peer.id)}
+                  aria-label={
+                    fullscreenTile === peer.id
+                      ? "Sair da tela cheia"
+                      : `Abrir a tela de ${displayName(peer.email, peer.alias)} em tela cheia`
+                  }
+                >
+                  <RoomIcon
+                    name={
+                      fullscreenTile === peer.id
+                        ? "exitFullscreen"
+                        : "fullscreen"
+                    }
+                  />
+                </button>
+              </div>
+              <RoomVideo
+                stream={remoteStreams[peer.id]}
+                label={displayName(peer.email, peer.alias)}
+              />
+            </article>
+          ))}
+          {!sharingCount ? (
+            <div className="room-empty">
+              <RoomIcon name="screen" />
+              <h2>Ninguém está compartilhando ainda</h2>
+              <p>
+                Inicie uma transmissão para apresentar uma tarefa, fluxo ou
+                demonstração ao projeto.
+              </p>
+            </div>
+          ) : null}
         </div>
 
         <div className="room-controls">
-          <div className="room-control-copy"><strong><RoomIcon name="screen" />{sharingCount}/2 telas ativas</strong><span>{participants.length} participante{participants.length === 1 ? "" : "s"} na sala</span></div>
-          <label className="room-audio-option"><input type="checkbox" checked={includeScreenAudio} onChange={(event) => setIncludeScreenAudio(event.target.checked)} disabled={isSharing || isPublishPending} />Áudio da tela</label>
-          <button className="room-control-button room-primary-control" type="button" onClick={isSharing ? stopSharing : startSharing} disabled={status !== "connected" || isPublishPending}>{isPublishPending ? "Reservando vaga…" : isSharing ? "Parar compartilhamento" : "Compartilhar tela"}</button>
-          <button className={`room-icon-control ${isMicEnabled ? "room-mic-active" : ""}`} type="button" onClick={toggleMic} disabled={status !== "connected"} aria-label={isMicEnabled ? "Desativar microfone" : "Ativar microfone"} title={isMicEnabled ? "Desativar microfone" : "Ativar microfone"}><RoomIcon name={isMicEnabled ? "mic" : "micOff"} /><span className="sr-only">{isMicEnabled ? "Desativar microfone" : "Ativar microfone"}</span></button>
+          <div className="room-control-copy">
+            <strong>
+              <RoomIcon name="screen" />
+              {sharingCount}/2 telas ativas
+            </strong>
+            <span>
+              {participants.length} participante
+              {participants.length === 1 ? "" : "s"} na sala
+            </span>
+          </div>
+          <label className="room-audio-option">
+            <input
+              type="checkbox"
+              checked={includeScreenAudio}
+              onChange={(event) => setIncludeScreenAudio(event.target.checked)}
+              disabled={isSharing || isPublishPending}
+            />
+            Áudio da tela
+          </label>
+          <button
+            className="room-control-button room-primary-control"
+            type="button"
+            onClick={isSharing ? stopSharing : startSharing}
+            disabled={status !== "connected" || isPublishPending}
+          >
+            {isPublishPending
+              ? "Reservando vaga…"
+              : isSharing
+                ? "Parar compartilhamento"
+                : "Compartilhar tela"}
+          </button>
+          <button
+            className={`room-icon-control ${isMicEnabled ? "room-mic-active" : ""}`}
+            type="button"
+            onClick={toggleMic}
+            disabled={status !== "connected"}
+            aria-label={
+              isMicEnabled ? "Desativar microfone" : "Ativar microfone"
+            }
+          >
+            <RoomIcon name={isMicEnabled ? "mic" : "micOff"} />
+          </button>
         </div>
       </section>
     </main>

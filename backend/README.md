@@ -63,6 +63,7 @@ Authorization: Bearer <token>
 | `GET` | `/api/projects/:id/room/ws` | WebSocket de presença e sinalização WebRTC |
 | `GET` | `/api/projects/:id/tasks` | Listar tarefas do projeto |
 | `POST` | `/api/projects/:id/tasks` | Criar tarefa |
+| `GET` / `POST` | `/api/projects/:id/labels` | Listar ou criar etiquetas do projeto |
 | `GET` / `PATCH` / `DELETE` | `/api/tasks/:id` | Consultar, editar ou remover tarefa |
 
 Status de tarefa: `backlog`, `todo`, `in_progress`, `done`. Prioridades: `low`, `medium`, `high`.
@@ -80,8 +81,10 @@ curl -X POST http://localhost:8080/api/projects \
 curl -X POST http://localhost:8080/api/projects/<PROJECT_ID>/tasks \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"title":"Criar tela inicial","description":"**Aceite:** tela responsiva","status":"backlog","priority":"high"}'
+  -d '{"title":"Criar tela inicial","description":"**Aceite:** tela responsiva","status":"backlog","priority":"high","label_ids":["<LABEL_ID>"]}'
 ```
+
+Etiquetas são compartilhadas entre as tarefas do projeto. Crie uma com `name` e uma cor da paleta `blue`, `purple`, `green`, `orange`, `red`, `cyan` ou `gray`. As tarefas retornam seus identificadores no campo `label_ids`; envie esse campo em `POST` ou `PATCH` para definir as etiquetas associadas.
 
 O proprietário do projeto é incluído automaticamente como integrante. Apenas integrantes podem ler e editar tarefas; somente o proprietário gerencia projeto e equipe. Projetos podem ser editados pelo proprietário, e tarefas podem ser editadas por qualquer integrante.
 
