@@ -43,7 +43,9 @@ type PeerConnectionState = {
   polite: boolean;
   makingOffer: boolean;
   ignoreOffer: boolean;
+  isSettingRemoteAnswerPending: boolean;
   pendingCandidates: RTCIceCandidateInit[];
+  signalingQueue: Promise<void>;
 };
 
 const ROOM_PROTOCOL = "raccoon-room-v1";
@@ -228,43 +230,52 @@ export default function RoomPage() {
     );
   }
 
-  async function negotiatePeer(
+  function showPeerError(reason: unknown, fallback: string) {
+    if (mountedRef.current)
+      setError(reason instanceof Error ? reason.message : fallback);
+  }
+
+  function negotiatePeer(
     peerID: string,
     connection: PeerConnectionState,
   ) {
-    try {
-      connection.makingOffer = true;
-      await connection.pc.setLocalDescription(
-        await connection.pc.createOffer(),
+    connection.signalingQueue = connection.signalingQueue
+      .then(async () => {
+        const { pc } = connection;
+        if (pc.signalingState !== "stable" || connection.makingOffer) return;
+
+        connection.makingOffer = true;
+        try {
+          // Let the browser create the offer from the current transceiver order.
+          await pc.setLocalDescription();
+          if (!pc.localDescription) return;
+          const description: SignalDescription = {
+            type: pc.localDescription.type,
+            sdp: pc.localDescription.sdp,
+          };
+          sendRoomMessage({
+            target: peerID,
+            type: "signal",
+            signal: { kind: "description", description },
+          });
+        } finally {
+          connection.makingOffer = false;
+        }
+      })
+      .catch((reason: unknown) =>
+        showPeerError(reason, "Não foi possível negociar a conexão."),
       );
-      if (connection.pc.localDescription) {
-        const description: SignalDescription = {
-          type: connection.pc.localDescription.type,
-          sdp: connection.pc.localDescription.sdp,
-        };
-        sendRoomMessage({
-          target: peerID,
-          type: "signal",
-          signal: { kind: "description", description },
-        });
-      }
-    } catch (reason) {
-      if (mountedRef.current)
-        setError(
-          reason instanceof Error
-            ? reason.message
-            : "Não foi possível negociar a conexão.",
-        );
-    } finally {
-      connection.makingOffer = false;
-    }
   }
 
-  function ensurePeerConnection(peer: RoomPeer, shouldOffer = false) {
+  function ensurePeerConnection(peer: RoomPeer) {
     const existing = peerConnectionsRef.current.get(peer.id);
     if (existing) return existing;
 
     const pc = new RTCPeerConnection({ iceServers: iceServersRef.current });
+    let connection: PeerConnectionState | null = null;
+    pc.onnegotiationneeded = () => {
+      if (connection) negotiatePeer(peer.id, connection);
+    };
     const videoSender = pc.addTransceiver("video", {
       direction: "sendrecv",
     }).sender;
@@ -274,7 +285,7 @@ export default function RoomPage() {
     const micSender = pc.addTransceiver("audio", {
       direction: "sendrecv",
     }).sender;
-    const connection: PeerConnectionState = {
+    const peerConnection: PeerConnectionState = {
       pc,
       videoSender,
       screenAudioSender,
@@ -282,9 +293,12 @@ export default function RoomPage() {
       polite: selfIDRef.current > peer.id,
       makingOffer: false,
       ignoreOffer: false,
+      isSettingRemoteAnswerPending: false,
       pendingCandidates: [],
+      signalingQueue: Promise.resolve(),
     };
-    peerConnectionsRef.current.set(peer.id, connection);
+    connection = peerConnection;
+    peerConnectionsRef.current.set(peer.id, peerConnection);
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
@@ -311,66 +325,75 @@ export default function RoomPage() {
       if (pc.connectionState === "failed" || pc.connectionState === "closed")
         closePeerConnection(peer.id);
     };
-    pc.onnegotiationneeded = () => {
-      void negotiatePeer(peer.id, connection);
-    };
-
-    if (shouldOffer)
-      setTimeout(() => {
-        if (pc.signalingState === "stable")
-          void negotiatePeer(peer.id, connection);
-      }, 0);
-    return connection;
+    return peerConnection;
   }
 
-  async function handleSignal(peerID: string, signal: SignalPayload) {
+  function handleSignal(peerID: string, signal: SignalPayload) {
     const peer = peersRef.current.find((item) => item.id === peerID);
     if (!peer) return;
     const connection = ensurePeerConnection(peer);
-    if (signal.kind === "ice") {
-      if (connection.pc.remoteDescription) {
-        await connection.pc
-          .addIceCandidate(signal.candidate)
-          .catch(() => undefined);
-      } else {
-        connection.pendingCandidates.push(signal.candidate);
-      }
-      return;
-    }
+    connection.signalingQueue = connection.signalingQueue
+      .then(async () => {
+        const { pc } = connection;
+        if (pc.signalingState === "closed") return;
 
-    const description = signal.description;
-    const offerCollision =
-      description.type === "offer" &&
-      (connection.makingOffer || connection.pc.signalingState !== "stable");
-    connection.ignoreOffer = !connection.polite && offerCollision;
-    if (connection.ignoreOffer) return;
-    try {
-      await connection.pc.setRemoteDescription(description);
-      for (const candidate of connection.pendingCandidates.splice(0)) {
-        await connection.pc.addIceCandidate(candidate).catch(() => undefined);
-      }
-      if (description.type === "offer") {
-        await connection.pc.setLocalDescription();
-        if (connection.pc.localDescription) {
-          const answer: SignalDescription = {
-            type: connection.pc.localDescription.type,
-            sdp: connection.pc.localDescription.sdp,
-          };
-          sendRoomMessage({
-            target: peerID,
-            type: "signal",
-            signal: { kind: "description", description: answer },
-          });
+        if (signal.kind === "ice") {
+          if (connection.ignoreOffer) return;
+          if (pc.remoteDescription) {
+            await pc.addIceCandidate(signal.candidate).catch(() => undefined);
+          } else {
+            connection.pendingCandidates.push(signal.candidate);
+          }
+          return;
         }
-      }
-    } catch (reason) {
-      if (mountedRef.current)
-        setError(
-          reason instanceof Error
-            ? reason.message
-            : "Não foi possível conectar este participante.",
-        );
-    }
+
+        const description = signal.description;
+        if (
+          description.type === "answer" &&
+          pc.signalingState !== "have-local-offer"
+        )
+          return;
+        const readyForOffer =
+          !connection.makingOffer &&
+          (pc.signalingState === "stable" ||
+            connection.isSettingRemoteAnswerPending);
+        const offerCollision =
+          description.type === "offer" && !readyForOffer;
+        connection.ignoreOffer = !connection.polite && offerCollision;
+        if (connection.ignoreOffer) {
+          connection.pendingCandidates = [];
+          return;
+        }
+
+        try {
+          connection.isSettingRemoteAnswerPending =
+            description.type === "answer";
+          await pc.setRemoteDescription(description);
+          connection.isSettingRemoteAnswerPending = false;
+          for (const candidate of connection.pendingCandidates.splice(0)) {
+            await pc.addIceCandidate(candidate).catch(() => undefined);
+          }
+          if (description.type === "offer") {
+            await pc.setLocalDescription();
+            if (pc.localDescription) {
+              const answer: SignalDescription = {
+                type: pc.localDescription.type,
+                sdp: pc.localDescription.sdp,
+              };
+              sendRoomMessage({
+                target: peerID,
+                type: "signal",
+                signal: { kind: "description", description: answer },
+              });
+            }
+          }
+        } finally {
+          connection.isSettingRemoteAnswerPending = false;
+        }
+      })
+      .catch((reason: unknown) =>
+        showPeerError(reason, "Não foi possível conectar este participante."),
+      );
   }
 
   function handleRoomMessage(payload: string) {
@@ -396,7 +419,7 @@ export default function RoomPage() {
       setSelfID(nextSelfID);
       if (message.peer) setSelfPeer(message.peer);
       updatePeers(() => nextPeers);
-      nextPeers.forEach((peer) => ensurePeerConnection(peer, true));
+      nextPeers.forEach((peer) => ensurePeerConnection(peer));
       return;
     }
     if (message.type === "peer_joined" && message.peer) {
