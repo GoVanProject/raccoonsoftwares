@@ -10,6 +10,8 @@ import {
   Microphone,
   MicrophoneSlash,
   Monitor,
+  SpeakerHigh,
+  SpeakerSlash,
   Users,
 } from "@phosphor-icons/react";
 
@@ -51,10 +53,26 @@ type PeerConnectionState = {
 const ROOM_PROTOCOL = "raccoon-room-v1";
 
 type RoomIconName =
-  "mic" | "micOff" | "fullscreen" | "exitFullscreen" | "screen" | "users";
+  | "mic"
+  | "micOff"
+  | "fullscreen"
+  | "exitFullscreen"
+  | "screen"
+  | "speaker"
+  | "speakerOff"
+  | "users";
 
 function RoomIcon({ name }: { name: RoomIconName }) {
-  const icons = { mic: Microphone, micOff: MicrophoneSlash, fullscreen: ArrowsOut, exitFullscreen: ArrowsIn, screen: Monitor, users: Users };
+  const icons = {
+    mic: Microphone,
+    micOff: MicrophoneSlash,
+    fullscreen: ArrowsOut,
+    exitFullscreen: ArrowsIn,
+    screen: Monitor,
+    speaker: SpeakerHigh,
+    speakerOff: SpeakerSlash,
+    users: Users,
+  };
   const Icon = icons[name];
   return <Icon className="room-icon" aria-hidden="true" />;
 }
@@ -77,34 +95,122 @@ function initials(email: string, alias?: string) {
 function RoomVideo({
   stream,
   label,
-  muted = false,
+  muted = true,
 }: {
   stream: MediaStream;
   label: string;
   muted?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [playbackBlocked, setPlaybackBlocked] = useState(false);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    video.srcObject = stream;
     video.muted = muted;
-    void video.play().catch(() => undefined);
+    video.srcObject = stream;
+    void video.play().then(
+      () => setPlaybackBlocked(false),
+      () => setPlaybackBlocked(true),
+    );
     return () => {
       video.srcObject = null;
     };
   }, [muted, stream]);
 
   return (
-    <video
-      ref={videoRef}
-      className="room-video"
-      autoPlay
-      playsInline
-      muted={muted}
-      aria-label={`Tela compartilhada por ${label}`}
-    />
+    <>
+      <video
+        ref={videoRef}
+        className="room-video"
+        autoPlay
+        playsInline
+        muted={muted}
+        aria-label={`Tela compartilhada por ${label}`}
+      />
+      {playbackBlocked ? (
+        <button
+          className="room-video-play"
+          type="button"
+          onClick={() => {
+            const video = videoRef.current;
+            if (!video) return;
+            void video.play().then(
+              () => setPlaybackBlocked(false),
+              () => setPlaybackBlocked(true),
+            );
+          }}
+        >
+          Reproduzir tela
+        </button>
+      ) : null}
+    </>
+  );
+}
+
+function RoomAudioControl({
+  stream,
+  label,
+}: {
+  stream: MediaStream;
+  label: string;
+}) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [enabled, setEnabled] = useState(false);
+  const hasLiveAudio = stream
+    .getAudioTracks()
+    .some((track) => track.readyState === "live");
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.srcObject = stream;
+    audio.muted = true;
+    void audio.play().catch(() => undefined);
+    return () => {
+      audio.pause();
+      audio.srcObject = null;
+    };
+  }, [stream]);
+
+  function toggleAudio() {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (enabled) {
+      audio.muted = true;
+      setEnabled(false);
+      return;
+    }
+    audio.muted = false;
+    void audio.play().then(
+      () => setEnabled(true),
+      () => {
+        audio.muted = true;
+        setEnabled(false);
+      },
+    );
+  }
+
+  return (
+    <>
+      <audio
+        ref={audioRef}
+        className="sr-only"
+        autoPlay
+        aria-label={`Áudio de ${label}`}
+      />
+      {hasLiveAudio ? (
+        <button
+          className="room-tile-action"
+          type="button"
+          onClick={toggleAudio}
+          aria-label={`${enabled ? "Silenciar" : "Ativar"} áudio de ${label}`}
+          title={`${enabled ? "Silenciar" : "Ativar"} áudio`}
+        >
+          <RoomIcon name={enabled ? "speaker" : "speakerOff"} />
+        </button>
+      ) : null}
+    </>
   );
 }
 
@@ -840,28 +946,35 @@ export default function RoomPage() {
                     </small>
                   </span>
                 </div>
-                <button
-                  className="room-tile-action"
-                  type="button"
-                  onClick={() => void toggleTileFullscreen(peer.id)}
-                  aria-label={
-                    fullscreenTile === peer.id
-                      ? "Sair da tela cheia"
-                      : `Abrir a tela de ${displayName(peer.email, peer.alias)} em tela cheia`
-                  }
-                >
-                  <RoomIcon
-                    name={
-                      fullscreenTile === peer.id
-                        ? "exitFullscreen"
-                        : "fullscreen"
-                    }
+                <div className="room-tile-actions">
+                  <RoomAudioControl
+                    stream={remoteStreams[peer.id]}
+                    label={displayName(peer.email, peer.alias)}
                   />
-                </button>
+                  <button
+                    className="room-tile-action"
+                    type="button"
+                    onClick={() => void toggleTileFullscreen(peer.id)}
+                    aria-label={
+                      fullscreenTile === peer.id
+                        ? "Sair da tela cheia"
+                        : `Abrir a tela de ${displayName(peer.email, peer.alias)} em tela cheia`
+                    }
+                  >
+                    <RoomIcon
+                      name={
+                        fullscreenTile === peer.id
+                          ? "exitFullscreen"
+                          : "fullscreen"
+                      }
+                    />
+                  </button>
+                </div>
               </div>
               <RoomVideo
                 stream={remoteStreams[peer.id]}
                 label={displayName(peer.email, peer.alias)}
+                muted
               />
             </article>
           ))}
