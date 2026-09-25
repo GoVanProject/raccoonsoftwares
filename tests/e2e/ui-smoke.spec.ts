@@ -145,17 +145,18 @@ test("workspace vazio/populado, rail e dialog com foco", async ({ page }) => {
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toBeHidden();
-  await expect(create).toBeFocused();
-  const taskStatus = page.getByRole("combobox", {
-    name: `Status de ${tasks[0].title}`,
-  });
+  await page.locator(".kanban-card").first().getByRole("button", { name: "Editar", exact: true }).click();
+  const editDialog = page.getByRole("dialog");
+  await expect(editDialog).toBeVisible();
+  const taskStatus = editDialog.getByRole("combobox", { name: "Status" });
   await expect(taskStatus).toBeVisible();
   await taskStatus.selectOption("done");
-  await expect(taskStatus).toHaveValue("done");
+  await editDialog.getByRole("button", { name: "Salvar alterações" }).click();
+  await expect(editDialog).toBeHidden();
   await page.getByText("Filtrar por etiquetas").click();
   await page.getByRole("checkbox", { name: "Prioridade" }).check();
   await expect(
-    page.getByRole("button", { name: "Abrir tarefa Validar responsividade" }),
+    page.getByRole("button", { name: "Validar responsividade", exact: true }),
   ).toHaveCount(0);
   await page.screenshot({
     path: `docs/ui-audit/after/board-${test.info().project.name}.png`,

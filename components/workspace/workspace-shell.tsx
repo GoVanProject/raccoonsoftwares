@@ -45,7 +45,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
   return (
     <TooltipProvider delayDuration={250}>
       <div className="min-h-dvh bg-muted/35 md:grid md:grid-cols-[auto_minmax(0,1fr)]">
-        <aside className="sticky top-0 hidden h-dvh border-r border-border bg-card md:block">
+        <aside className="sticky top-0 hidden h-dvh md:block">
           <WorkspaceRail
             mode={section === "projects" ? "select" : section}
             projectId={projectId}

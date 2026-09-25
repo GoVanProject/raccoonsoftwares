@@ -24,7 +24,7 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { API_URL, taskboardFetch } from "../lib/taskboard";
 import { useTaskboardToken } from "../lib/use-taskboard-token";
 import { cn } from "@/lib/utils";
-import { WorkspaceAvatarStack, WorkspaceIcon } from "./components/workspace-ui";
+import { initials, WorkspaceAvatarStack, WorkspaceIcon } from "./components/workspace-ui";
 
 type Status = "backlog" | "todo" | "in_progress" | "done";
 type Priority = "low" | "medium" | "high";
@@ -121,6 +121,10 @@ const columns: { status: Status; label: string; tone: string }[] = [
   { status: "in_progress", label: "Em andamento", tone: "progress" },
   { status: "done", label: "Concluído", tone: "done" },
 ];
+
+const boardColumns: { status: Status; label: string; tone: string }[] = columns.filter(
+  (column) => column.status !== "backlog",
+);
 
 function MarkdownPreview({
   value,
@@ -1196,24 +1200,7 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                   </div>
                 </MagicCard>
               </BlurFade>
-              <nav className="project-view-tabs my-1 mb-5 flex gap-1 overflow-x-auto border-b border-border" aria-label="Visões do projeto">
-                {([
-                  ["summary", "Resumo", "summary"],
-                  ["backlog", "Backlog", "backlog"],
-                  ["board", "Quadro", ""],
-                ] as const).map(([tab, label, suffix]) => (
-                  <Link
-                    className={cn("inline-flex min-h-12 shrink-0 items-center gap-2 border-b-2 border-transparent px-3.5 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-ring", view === tab && "border-primary text-primary")}
-                    href={`/workspace/${selectedProject.id}${suffix ? `/${suffix}` : ""}`}
-                    aria-current={view === tab ? "page" : undefined}
-                    key={tab}
-                  >
-                    {tab === "summary" ? <WorkspaceIcon name="summary" /> : tab === "backlog" ? <WorkspaceIcon name="backlog" /> : <WorkspaceIcon name="board" />}
-                    {label}
-                  </Link>
-                ))}
-              </nav>
-              <div className="workspace-toolbar">
+              <div className="workspace-toolbar mb-4">
                 <div className="workspace-toolbar-copy">
                   <span className="workspace-kicker">{view === "summary" ? "Resumo do projeto" : view === "backlog" ? "Backlog do projeto" : "Quadro de tarefas"}</span>
                   <strong>
@@ -1254,6 +1241,23 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                   </Button>
                 </div>
               </div>
+              <nav className="project-view-tabs my-1 mb-6 flex gap-1 overflow-x-auto border-b border-border" aria-label="Visões do projeto">
+                {([
+                  ["summary", "Resumo", "summary"],
+                  ["backlog", "Backlog", "backlog"],
+                  ["board", "Quadro", ""],
+                ] as const).map(([tab, label, suffix]) => (
+                  <Link
+                    className={cn("inline-flex min-h-12 shrink-0 items-center gap-2 border-b-2 border-transparent px-3.5 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-ring", view === tab && "border-primary text-primary")}
+                    href={`/workspace/${selectedProject.id}${suffix ? `/${suffix}` : ""}`}
+                    aria-current={view === tab ? "page" : undefined}
+                    key={tab}
+                  >
+                    {tab === "summary" ? <WorkspaceIcon name="summary" /> : tab === "backlog" ? <WorkspaceIcon name="backlog" /> : <WorkspaceIcon name="board" />}
+                    {label}
+                  </Link>
+                ))}
+              </nav>
               {view === "summary" ? (
                 <section className="grid gap-5" aria-label="Resumo do projeto">
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -1301,16 +1305,21 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                 </section>
               ) : null}
               {view === "board" ? <>
-              <div className="relative z-[5] -mt-2.5 mb-4 flex items-center justify-center gap-2.5 sm:-mt-1.5">
-                <LabelFilter labels={labels} selectedIDs={selectedLabelIDs} onChange={setSelectedLabelIDs} emptyText="Crie etiquetas ao editar uma tarefa." />
-                {selectedLabelIDs.length ? (
-                  <button className="min-h-11 rounded-lg border border-border bg-secondary px-2.5 text-xs font-bold text-muted-foreground transition-colors hover:bg-muted" type="button" onClick={() => setSelectedLabelIDs([])}>
-                    Limpar filtros
-                  </button>
-                ) : null}
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/60 bg-card/60 p-2.5 backdrop-blur-sm shadow-2xs">
+                <div className="flex flex-wrap items-center gap-2">
+                  <LabelFilter labels={labels} selectedIDs={selectedLabelIDs} onChange={setSelectedLabelIDs} emptyText="Crie etiquetas ao editar uma tarefa." />
+                  {selectedLabelIDs.length ? (
+                    <button className="min-h-9 rounded-lg border border-border bg-secondary px-3 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" type="button" onClick={() => setSelectedLabelIDs([])}>
+                      Limpar filtros ({selectedLabelIDs.length})
+                    </button>
+                  ) : null}
+                </div>
+                <div className="text-xs font-medium text-muted-foreground">
+                  {boardColumns.reduce((acc, col) => acc + groupedTasks[col.status].length, 0)} {boardColumns.reduce((acc, col) => acc + groupedTasks[col.status].length, 0) === 1 ? "tarefa no quadro" : "tarefas no quadro"}
+                </div>
               </div>
-              <div className="kanban-grid grid min-w-0 grid-flow-col auto-cols-[minmax(280px,1fr)] gap-4 overflow-x-auto pb-2 xl:grid-flow-row xl:grid-cols-4 xl:auto-cols-auto">
-                {columns.map((column) => (
+              <div className="kanban-grid grid min-w-0 grid-flow-col auto-cols-[minmax(280px,1fr)] gap-4 overflow-x-auto pb-2 xl:grid-flow-row xl:grid-cols-3 xl:auto-cols-auto">
+                {boardColumns.map((column) => (
                   <section
                     className={cn(
                       "min-h-[420px] min-w-0 w-full max-w-full overflow-hidden rounded-2xl border border-border bg-secondary/70 p-3 transition-[background,border-color,box-shadow] duration-300",
@@ -1331,113 +1340,103 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                       <b className="ml-auto grid size-6 place-items-center rounded-md bg-muted text-xs text-muted-foreground">{groupedTasks[column.status].length}</b>
                     </div>
                     <div className="grid gap-3">
-                      {groupedTasks[column.status].map((task) => (
-                        <article
-                          className={cn(
-                            "kanban-card min-w-0 w-full max-w-full overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm transition-[transform,border-color,box-shadow,opacity] duration-300 hover:-translate-y-0.5 hover:border-input hover:shadow-md focus-within:-translate-y-0.5 focus-within:border-input focus-within:shadow-md",
-                            !isReadOnly && "cursor-grab active:cursor-grabbing",
-                            draggedTaskId === task.id && "rotate-1 scale-[0.98] opacity-55",
-                            movingTaskId === task.id && "pointer-events-none opacity-65",
-                          )}
-                          key={task.id}
-                          draggable={!isReadOnly}
-                          onDragStart={(event) =>
-                            handleTaskDragStart(event, task)
-                          }
-                          onDragEnd={handleTaskDragEnd}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <PriorityPill priority={task.priority} />
-                            <div
-                              className="flex min-w-0 items-center gap-2"
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              <select
-                                className="h-10 min-w-0 max-w-[132px] rounded-lg border border-border bg-card px-2 text-xs text-muted-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
-                                value={task.status}
-                                onChange={(event) =>
-                                  void updateTask(task, {
-                                    status: event.target.value as Status,
-                                  })
-                                }
-                                aria-label={`Status de ${task.title}`}
-                                disabled={isReadOnly}
-                              >
-                                <option value="backlog">Backlog</option>
-                                <option value="todo">A fazer</option>
-                                <option value="in_progress">
-                                  Em andamento
-                                </option>
-                                <option value="done">Concluído</option>
-                              </select>
+                      {groupedTasks[column.status].map((task) => {
+                        const assignedMember = members.find((member) => member.id === task.assignee_id);
+
+                        return (
+                          <article
+                            className={cn(
+                              "kanban-card min-w-0 w-full max-w-full overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm transition-[transform,border-color,box-shadow,opacity] duration-300 hover:-translate-y-0.5 hover:border-input hover:shadow-md focus-within:-translate-y-0.5 focus-within:border-input focus-within:shadow-md",
+                              !isReadOnly && "cursor-grab active:cursor-grabbing",
+                              draggedTaskId === task.id && "rotate-1 scale-[0.98] opacity-55",
+                              movingTaskId === task.id && "pointer-events-none opacity-65",
+                            )}
+                            key={task.id}
+                            draggable={!isReadOnly}
+                            onDragStart={(event) =>
+                              handleTaskDragStart(event, task)
+                            }
+                            onDragEnd={handleTaskDragEnd}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <PriorityPill priority={task.priority} />
                               <Button
-                                variant="outline"
+                                variant="ghost"
                                 size="sm"
-                                className="h-10 shrink-0 rounded-lg px-3 text-xs"
+                                className="h-8 rounded-lg px-2.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
                                 type="button"
-                                onClick={() => startTaskEdit(task)}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  startTaskEdit(task);
+                                }}
                                 disabled={isReadOnly}
                               >
                                 Editar
                               </Button>
                             </div>
-                          </div>
-                          <button
-                            className="mt-3 grid min-h-11 w-full items-center rounded-md border-0 bg-transparent p-0 text-left text-inherit outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                            type="button"
-                            onClick={() => openTaskView(task)}
-                          >
-                            <h3 className="m-0 text-base leading-snug font-bold">{task.title}</h3>
-                          </button>
-                          <LabelPills labels={labels} labelIDs={task.label_ids} limit={3} />
-                          {task.description ? (
-                            <MarkdownPreview value={task.description} />
-                          ) : (
-                            <p className="mb-3 text-sm text-muted-foreground">
-                              Sem descrição adicionada.
-                            </p>
-                          )}
-                          <div
-                            className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-3"
-                            onClick={(event) => event.stopPropagation()}
-                          >
-                            <select
-                              className="h-10 min-w-0 max-w-[calc(100%-40px)] flex-1 rounded-lg border border-border bg-card px-2 text-xs text-muted-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
-                              value={task.assignee_id || ""}
-                              onChange={(event) =>
-                                void updateTask(task, {
-                                  assignee_id: event.target.value,
-                                })
-                              }
-                              aria-label={`Responsável por ${task.title}`}
-                              disabled={isReadOnly}
+                            <button
+                              className="mt-2.5 grid min-h-10 w-full items-center rounded-md border-0 bg-transparent p-0 text-left text-inherit outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                              type="button"
+                              onClick={() => openTaskView(task)}
                             >
-                              <option value="">Sem responsável</option>
-                              {members.map((member) => (
-                                <option value={member.id} key={member.id}>
-                                  {member.alias || member.email}
-                                </option>
-                              ))}
-                            </select>
-                            <span className="grid size-8 shrink-0 place-items-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
-                              {task.assignee_id
-                                ? (
-                                    members.find(
-                                      (member) =>
-                                        member.id === task.assignee_id,
-                                    )?.alias ||
-                                    members.find(
-                                      (member) =>
-                                        member.id === task.assignee_id,
-                                    )?.email
-                                  )
-                                    ?.slice(0, 1)
-                                    .toUpperCase() || "?"
-                                : "·"}
-                            </span>
-                          </div>
-                        </article>
-                      ))}
+                              <h3 className="m-0 text-base leading-snug font-bold">{task.title}</h3>
+                            </button>
+                            <LabelPills labels={labels} labelIDs={task.label_ids} limit={3} />
+                            {task.description ? (
+                              <MarkdownPreview value={task.description} />
+                            ) : (
+                              <p className="mb-2 text-xs text-muted-foreground">
+                                Sem descrição adicionada.
+                              </p>
+                            )}
+                            {assignedMember || task.due_date ? (
+                              <div
+                                className="mt-3 flex items-center justify-between gap-2 border-t border-border/70 pt-2.5 text-xs"
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                {assignedMember ? (
+                                  <div
+                                    className="flex items-center gap-2 min-w-0"
+                                    title={`Responsável: ${assignedMember.alias || assignedMember.email}`}
+                                  >
+                                    {assignedMember.avatar_data ? (
+                                      <Image
+                                        src={assignedMember.avatar_data}
+                                        alt=""
+                                        width={24}
+                                        height={24}
+                                        className="size-6 shrink-0 rounded-full object-cover border border-border"
+                                        unoptimized
+                                      />
+                                    ) : (
+                                      <span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
+                                        {initials(assignedMember.email, assignedMember.alias)}
+                                      </span>
+                                    )}
+                                    <span className="truncate text-xs font-medium text-foreground/80">
+                                      {assignedMember.alias || assignedMember.email.split("@")[0]}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <div />
+                                )}
+
+                                {task.due_date ? (
+                                  <span
+                                    className={cn(
+                                      "text-[11px] font-medium text-muted-foreground shrink-0",
+                                      task.due_date < localToday && "text-destructive font-semibold"
+                                    )}
+                                  >
+                                    {task.due_date < localToday ? "Atrasada · " : ""}
+                                    {new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "short" }).format(new Date(`${task.due_date}T12:00:00`))}
+                                  </span>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </article>
+                        );
+                      })}
                       {!groupedTasks[column.status].length ? (
                         <div className="rounded-lg border border-dashed border-input px-3 py-7 text-center text-xs text-muted-foreground">
                           {selectedLabelIDs.length
@@ -1781,6 +1780,7 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                     Status
                     <select
                       value={editTaskStatus}
+                      aria-label="Status"
                       onChange={(event) =>
                         setEditTaskStatus(event.target.value as Status)
                       }

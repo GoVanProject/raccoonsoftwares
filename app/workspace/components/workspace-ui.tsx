@@ -105,7 +105,9 @@ export function WorkspaceAvatarStack({
   );
 }
 
-function ThemeToggle() {
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+
+function ThemeToggle({ expanded = false }: { expanded?: boolean }) {
   const { resolvedTheme, setTheme } = useTheme();
   const theme = resolvedTheme === "dark" ? "dark" : "light";
 
@@ -115,21 +117,52 @@ function ThemeToggle() {
   }
 
   const isDark = theme === "dark";
-  return (
+  const label = isDark ? "Ativar tema claro" : "Ativar tema escuro";
+
+  const button = (
     <Button
       variant="ghost"
       size="sm"
-      className="h-10 w-full justify-start rounded-lg px-3 text-muted-foreground"
+      className={cn(
+        "h-11 rounded-xl text-muted-foreground transition-all duration-200 hover:bg-muted/80 hover:text-foreground border border-transparent",
+        expanded ? "w-full justify-start gap-3 px-3" : "size-11 justify-center p-0 mx-auto"
+      )}
       type="button"
       onClick={toggleTheme}
-      aria-label={isDark ? "Ativar tema claro" : "Ativar tema escuro"}
+      aria-label={label}
     >
-      <WorkspaceIcon name={isDark ? "sun" : "moon"} /><span>Tema</span>
+      <WorkspaceIcon name={isDark ? "sun" : "moon"} />
+      {expanded ? (
+        <span className="text-sm font-medium">
+          Tema ({isDark ? "Escuro" : "Claro"})
+        </span>
+      ) : (
+        <span className="sr-only">{label}</span>
+      )}
     </Button>
   );
+
+  if (!expanded) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{button}</TooltipTrigger>
+        <TooltipContent side="right" className="font-semibold">{label}</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return button;
 }
 
-function ProjectSwitcher({ projectId, onProjectInvalid }: { projectId?: string; onProjectInvalid?: () => void }) {
+function ProjectSwitcher({
+  projectId,
+  expanded = false,
+  onProjectInvalid,
+}: {
+  projectId?: string;
+  expanded?: boolean;
+  onProjectInvalid?: () => void;
+}) {
   const router = useRouter();
   const switcherRef = useRef<HTMLDivElement>(null);
   const { token, clearToken } = useTaskboardToken();
@@ -188,34 +221,218 @@ function ProjectSwitcher({ projectId, onProjectInvalid }: { projectId?: string; 
     if (project.id !== projectId) router.push(`/workspace/${project.id}`);
   }
 
-  return (
-    <div className="relative" ref={switcherRef}>
-      <Button
-        variant="outline"
-        className="h-auto min-h-12 w-full justify-start gap-2 px-3 py-2 text-left"
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        aria-label={currentProject ? `Projeto atual: ${currentProject.name}` : "Selecionar projeto"}
-        aria-expanded={open}
-        aria-haspopup="listbox"
+  const triggerAria = currentProject ? `Projeto atual: ${currentProject.name}` : "Selecionar projeto";
+
+  const trigger = (
+    <button
+      type="button"
+      className={cn(
+        "group relative flex items-center rounded-xl border border-border/80 bg-secondary/50 text-foreground transition-all duration-200 hover:border-primary/40 hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20",
+        expanded ? "h-12 w-full gap-2.5 px-3 py-2 text-left" : "size-11 mx-auto justify-center",
+        open && "border-primary bg-secondary/80 ring-2 ring-primary/20"
+      )}
+      onClick={() => setOpen((current) => !current)}
+      aria-label={triggerAria}
+      aria-expanded={open}
+      aria-haspopup="listbox"
+    >
+      <div
+        className={cn(
+          "flex shrink-0 items-center justify-center text-primary",
+          expanded ? "size-7 rounded-lg bg-primary/10" : ""
+        )}
       >
         <WorkspaceIcon name="folder" />
-        <span className="grid min-w-0 flex-1 gap-0.5"><small className="text-[10px] font-medium text-muted-foreground">Projeto atual</small><strong className="overflow-hidden text-ellipsis whitespace-nowrap text-xs">{currentProject?.name || "Selecionar projeto"}</strong></span>
-        <WorkspaceIcon name="chevron" />
-      </Button>
-      {open ? <div className="absolute left-0 top-[calc(100%+8px)] z-50 grid max-h-[min(420px,calc(100dvh-140px))] w-[min(320px,calc(100vw-32px))] gap-1 overflow-y-auto rounded-xl border border-border bg-card p-2 shadow-xl" role="listbox" aria-label="Projetos disponíveis">
-        <div className="flex items-center justify-between px-2 py-1 text-xs font-semibold"><span>Projetos</span><small className="text-muted-foreground">{loading ? "Carregando" : projects.length}</small></div>
-        {loading ? <>{[1, 2, 3].map((item) => <div className="h-12 animate-pulse rounded-lg bg-muted" key={item} />)}</> : null}
-        {!loading && error ? <p className="m-0 px-2 py-3 text-sm text-destructive">{error}</p> : null}
-        {!loading && !error && !projects.length ? <p className="m-0 px-2 py-3 text-sm text-muted-foreground">Nenhum projeto disponível ainda.</p> : null}
-        {!loading && !error ? projects.map((project) => <Button variant="ghost" size="sm" className={cn("h-auto w-full justify-between px-2 py-2 text-left", project.id === projectId && "bg-primary/10 text-primary")} role="option" aria-selected={project.id === projectId} type="button" key={project.id} onClick={() => selectProject(project)}>
-          <span className="grid min-w-0 gap-0.5"><strong className="overflow-hidden text-ellipsis whitespace-nowrap text-xs">{project.name}</strong><small className="text-[11px] font-normal text-muted-foreground">{project.task_count} {project.task_count === 1 ? "tarefa" : "tarefas"}</small></span>
+      </div>
+      {expanded ? (
+        <>
+          <span className="grid min-w-0 flex-1 gap-0.5">
+            <small className="text-[10px] font-medium text-muted-foreground leading-none">Projeto atual</small>
+            <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-xs leading-tight">
+              {currentProject?.name || "Selecionar projeto"}
+            </strong>
+          </span>
           <WorkspaceIcon name="chevron" />
-        </Button>) : null}
-        <Link className="mt-1 flex min-h-10 items-center gap-2 rounded-lg px-2 text-xs font-semibold text-primary hover:bg-primary/10" href="/workspace" onClick={() => setOpen(false)}><WorkspaceIcon name="folder" />Gerenciar projetos</Link>
-      </div> : null}
+        </>
+      ) : (
+        <span className="sr-only">{triggerAria}</span>
+      )}
+      {!expanded && currentProject ? (
+        <span className="absolute bottom-1.5 right-1.5 size-2 rounded-full bg-primary ring-2 ring-card" />
+      ) : null}
+    </button>
+  );
+
+  return (
+    <div className="relative w-full" ref={switcherRef}>
+      {!expanded ? (
+        <Tooltip>
+          <TooltipTrigger asChild>{trigger}</TooltipTrigger>
+          <TooltipContent side="right" className="font-semibold">{triggerAria}</TooltipContent>
+        </Tooltip>
+      ) : (
+        trigger
+      )}
+
+      {open ? (
+        <div
+          className={cn(
+            "absolute z-50 grid max-h-[min(420px,calc(100dvh-140px))] gap-1 overflow-y-auto rounded-xl border border-border/80 bg-card/95 p-2 shadow-2xl backdrop-blur-xl",
+            expanded
+              ? "left-0 top-[calc(100%+8px)] w-full min-w-[240px]"
+              : "left-[calc(100%+10px)] top-0 w-72"
+          )}
+          role="listbox"
+          aria-label="Projetos disponíveis"
+        >
+          <div className="flex items-center justify-between px-2.5 py-1.5 text-xs font-semibold border-b border-border/50 pb-2 mb-1">
+            <span className="text-foreground">Projetos</span>
+            <small className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+              {loading ? "..." : projects.length}
+            </small>
+          </div>
+          {loading ? (
+            <div className="grid gap-1.5 p-1">
+              {[1, 2, 3].map((item) => (
+                <div className="h-10 animate-pulse rounded-lg bg-muted/70" key={item} />
+              ))}
+            </div>
+          ) : null}
+          {!loading && error ? (
+            <p className="m-0 px-2 py-3 text-xs text-destructive">{error}</p>
+          ) : null}
+          {!loading && !error && !projects.length ? (
+            <p className="m-0 px-2 py-3 text-xs text-muted-foreground">Nenhum projeto disponível ainda.</p>
+          ) : null}
+          {!loading && !error
+            ? projects.map((project) => (
+                <button
+                  className={cn(
+                    "flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left transition-colors",
+                    project.id === projectId
+                      ? "bg-primary/12 text-primary font-semibold"
+                      : "text-foreground hover:bg-muted/80"
+                  )}
+                  role="option"
+                  aria-selected={project.id === projectId}
+                  type="button"
+                  key={project.id}
+                  onClick={() => selectProject(project)}
+                >
+                  <span className="grid min-w-0 gap-0.5">
+                    <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-xs">
+                      {project.name}
+                    </strong>
+                    <small className="text-[10px] font-normal text-muted-foreground">
+                      {project.task_count} {project.task_count === 1 ? "tarefa" : "tarefas"}
+                    </small>
+                  </span>
+                  <WorkspaceIcon name="chevron" />
+                </button>
+              ))
+            : null}
+          <div className="mt-1 border-t border-border/50 pt-1">
+            <Link
+              className="flex min-h-9 items-center gap-2 rounded-lg px-2.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/10"
+              href="/workspace"
+              onClick={() => setOpen(false)}
+            >
+              <WorkspaceIcon name="folder" />
+              Gerenciar projetos
+            </Link>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
+}
+
+function WorkspaceNavLink({
+  href,
+  active,
+  icon,
+  label,
+  expanded,
+}: {
+  href: string;
+  active: boolean;
+  icon: WorkspaceIconName;
+  label: string;
+  expanded: boolean;
+}) {
+  const content = (
+    <Link
+      href={href}
+      className={cn(
+        "group relative flex items-center rounded-xl text-sm font-medium transition-all duration-200",
+        expanded ? "h-11 w-full gap-3 px-3" : "size-11 mx-auto justify-center",
+        active
+          ? "bg-primary/12 text-primary font-semibold shadow-xs border border-primary/20 dark:bg-primary/20 dark:text-primary-foreground dark:border-primary/30"
+          : "text-muted-foreground hover:bg-muted/80 hover:text-foreground border border-transparent"
+      )}
+      aria-label={`Abrir ${label.toLowerCase()}`}
+      aria-current={active ? "page" : undefined}
+    >
+      <WorkspaceIcon name={icon} />
+      {expanded ? (
+        <>
+          <span className="truncate">{label}</span>
+          {active && (
+            <span className="ml-auto size-1.5 rounded-full bg-primary" />
+          )}
+        </>
+      ) : (
+        <span className="sr-only">{label}</span>
+      )}
+    </Link>
+  );
+
+  if (!expanded) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{content}</TooltipTrigger>
+        <TooltipContent side="right" className="font-semibold">{label}</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return content;
+}
+
+function LogoutButton({
+  expanded,
+  onLogout,
+}: {
+  expanded: boolean;
+  onLogout: () => void;
+}) {
+  const content = (
+    <Button
+      variant="ghost"
+      size="sm"
+      className={cn(
+        "h-11 rounded-xl text-muted-foreground transition-all duration-200 hover:bg-destructive/10 hover:text-destructive border border-transparent",
+        expanded ? "w-full justify-start gap-3 px-3" : "size-11 justify-center p-0 mx-auto"
+      )}
+      type="button"
+      onClick={onLogout}
+      aria-label="Sair da conta"
+    >
+      <WorkspaceIcon name="logout" />
+      {expanded ? <span className="text-sm font-medium">Sair</span> : <span className="sr-only">Sair</span>}
+    </Button>
+  );
+
+  if (!expanded) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{content}</TooltipTrigger>
+        <TooltipContent side="right" className="font-semibold">Sair da conta</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return content;
 }
 
 export function WorkspaceRail({ mode, projectId, expanded = false, onToggleExpanded, onLogout }: WorkspaceRailProps) {
@@ -224,42 +441,123 @@ export function WorkspaceRail({ mode, projectId, expanded = false, onToggleExpan
   const hasProjectContext = Boolean(projectId);
 
   return (
-    <nav className={cn("flex h-full w-[76px] flex-col gap-4 p-3 transition-[width] duration-200", expanded && "w-64")} aria-label="Navegação do workspace">
-      <div className="flex items-center justify-between gap-2">
-        <Link className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-xl border border-border bg-muted" href="/" aria-label="Voltar para a RaccoonSoftwares">
-          <Image src="/raccoon-mascot.webp" width={32} height={32} alt="" />
+    <nav
+      className={cn(
+        "flex h-full flex-col gap-3 p-3 transition-[width] duration-300 ease-in-out border-r border-border/80 bg-card/85 backdrop-blur-xl shadow-xs",
+        expanded ? "w-64" : "w-[72px]"
+      )}
+      aria-label="Navegação do workspace"
+    >
+      {/* Brand Header */}
+      <div className="flex items-center justify-between gap-2 px-0.5">
+        <Link
+          className={cn(
+            "group flex items-center gap-2.5 rounded-xl transition-all duration-200",
+            !expanded && "mx-auto justify-center"
+          )}
+          href="/"
+          aria-label="Voltar para a RaccoonSoftwares"
+        >
+          <div className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-xl border border-border/80 bg-muted/60 p-1 shadow-2xs transition-all duration-300 group-hover:scale-105 group-hover:border-primary/40 group-hover:shadow-xs">
+            <Image src="/raccoon-mascot.webp" width={32} height={32} alt="Raccoon Mascot" className="size-full object-contain" />
+          </div>
+          {expanded ? (
+            <div className="flex flex-col min-w-0">
+              <span className="text-sm font-bold tracking-tight text-foreground leading-tight">Raccoon</span>
+              <span className="text-[10px] font-medium text-muted-foreground leading-tight">Softwares</span>
+            </div>
+          ) : null}
         </Link>
-        {onToggleExpanded ? <Button variant="ghost" size="icon" className="size-10 shrink-0" type="button" onClick={onToggleExpanded} aria-label={expanded ? "Recolher navegação" : "Expandir navegação"} aria-expanded={expanded}><WorkspaceIcon name={expanded ? "close" : "menu"} /></Button> : null}
+
+        {onToggleExpanded && expanded ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8 shrink-0 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+            type="button"
+            onClick={onToggleExpanded}
+            aria-label="Recolher navegação"
+            aria-expanded={expanded}
+          >
+            <WorkspaceIcon name="close" />
+          </Button>
+        ) : null}
       </div>
 
-      <ProjectSwitcher projectId={projectId} onProjectInvalid={projectInvalid} />
+      {onToggleExpanded && !expanded ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="mx-auto size-8 shrink-0 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+              type="button"
+              onClick={onToggleExpanded}
+              aria-label="Expandir navegação"
+              aria-expanded={expanded}
+            >
+              <WorkspaceIcon name="menu" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right" className="font-semibold">Expandir navegação</TooltipContent>
+        </Tooltip>
+      ) : null}
 
-      <div className="grid gap-1">
-        {hasProjectContext ? <>
-          <Link className={cn("flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground", mode === "board" && "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground")} href={`/workspace/${projectId}`} aria-label="Abrir quadro" aria-current={mode === "board" ? "page" : undefined}>
-            <WorkspaceIcon name="board" /><span className={cn(!expanded && "sr-only")}>Quadro</span>
-          </Link>
-          <Link className={cn("flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground", mode === "prospects" && "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground")} href={`/workspace/${projectId}/prospects`} aria-label="Abrir prospecção" aria-current={mode === "prospects" ? "page" : undefined}>
-            <WorkspaceIcon name="mapPin" /><span className={cn(!expanded && "sr-only")}>Prospecção</span>
-          </Link>
-          <Link className={cn("flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground", mode === "room" && "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground")} href={`/workspace/${projectId}/room`} aria-label="Abrir sala ao vivo" aria-current={mode === "room" ? "page" : undefined}>
-            <WorkspaceIcon name="screen" /><span className={cn(!expanded && "sr-only")}>Sala ao vivo</span>
-          </Link>
-          <Link className={cn("flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground", mode === "team" && "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground")} href={`/workspace/${projectId}/team`} aria-label="Abrir equipe" aria-current={mode === "team" ? "page" : undefined}>
-            <WorkspaceIcon name="users" /><span className={cn(!expanded && "sr-only")}>Equipe</span>
-          </Link>
-        </> : null}
+      <div className="my-0.5 w-full">
+        <ProjectSwitcher projectId={projectId} expanded={expanded} onProjectInvalid={projectInvalid} />
       </div>
 
-      <div className="mt-auto grid gap-2">
-        <ThemeToggle />
-        <div className="h-px bg-border" />
-        <Link className={cn("flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground", mode === "profile" && "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground")} href="/workspace/profile" aria-label="Abrir perfil" aria-current={mode === "profile" ? "page" : undefined}>
-          <WorkspaceIcon name="profile" /><span className={cn(!expanded && "sr-only")}>Perfil</span>
-        </Link>
-        <Button variant="ghost" size="sm" className="h-10 w-full justify-start px-3 text-destructive hover:text-destructive" type="button" onClick={onLogout} aria-label="Sair da conta">
-          <WorkspaceIcon name="logout" /><span className={cn(!expanded && "sr-only")}>Sair</span>
-        </Button>
+      <div className="grid gap-1.5 w-full">
+        {hasProjectContext ? (
+          <>
+            {expanded ? (
+              <span className="px-2 pt-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">
+                Menu
+              </span>
+            ) : null}
+            <WorkspaceNavLink
+              href={`/workspace/${projectId}`}
+              active={mode === "board"}
+              icon="board"
+              label="Quadro"
+              expanded={expanded}
+            />
+            <WorkspaceNavLink
+              href={`/workspace/${projectId}/prospects`}
+              active={mode === "prospects"}
+              icon="mapPin"
+              label="Prospecção"
+              expanded={expanded}
+            />
+            <WorkspaceNavLink
+              href={`/workspace/${projectId}/room`}
+              active={mode === "room"}
+              icon="screen"
+              label="Sala ao vivo"
+              expanded={expanded}
+            />
+            <WorkspaceNavLink
+              href={`/workspace/${projectId}/team`}
+              active={mode === "team"}
+              icon="users"
+              label="Equipe"
+              expanded={expanded}
+            />
+          </>
+        ) : null}
+      </div>
+
+      {/* Footer Actions */}
+      <div className="mt-auto grid gap-1.5 w-full pt-2 border-t border-border/60">
+        <ThemeToggle expanded={expanded} />
+        <WorkspaceNavLink
+          href="/workspace/profile"
+          active={mode === "profile"}
+          icon="profile"
+          label="Perfil"
+          expanded={expanded}
+        />
+        <LogoutButton expanded={expanded} onLogout={onLogout} />
       </div>
     </nav>
   );
