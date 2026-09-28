@@ -1583,7 +1583,7 @@ html[data-theme="dark"] .workspace-rail-logout:focus-visible {
 }
 
 .task-modal-form label { color: hsl(var(--foreground)); font-size: 12px; font-weight: 700; }
-.task-modal-form input,
+.task-modal-form input:not([type="checkbox"]),
 .task-modal-form textarea,
 .task-modal-form select {
   min-height: 44px;
@@ -1594,7 +1594,24 @@ html[data-theme="dark"] .workspace-rail-logout:focus-visible {
   font: inherit;
 }
 .task-modal-form textarea { min-height: 120px; }
-.task-modal-form input:focus,
+.task-modal-form input[type="checkbox"] {
+  width: 20px;
+  min-width: 20px;
+  min-height: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: hsl(var(--primary));
+}
+.task-modal-form .task-label-option {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  color: hsl(var(--foreground));
+  font-size: 12px;
+  font-weight: 500;
+}
+.task-modal-form input:not([type="checkbox"]):focus,
 .task-modal-form textarea:focus,
 .task-modal-form select:focus {
   border-color: hsl(var(--ring));
@@ -2155,10 +2172,44 @@ html[data-theme="dark"] .workspace-rail-logout:focus-visible {
   font-weight: 750;
 }
 
-.task-modal-form input,
+.task-modal-form input:not([type="checkbox"]),
 .task-modal-form textarea,
 .task-modal-form select {
   width: 100%;
+}
+
+.workspace-task-title-input {
+  width: min(800px, 100%);
+  min-width: 0;
+  min-height: 44px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  background: hsl(var(--card));
+  padding: 8px 10px;
+  color: hsl(var(--foreground));
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.2;
+  outline: none;
+}
+
+.workspace-task-description-input {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  background: hsl(var(--card));
+  padding: 10px 12px;
+  color: hsl(var(--foreground));
+  font: inherit;
+  outline: none;
+}
+
+.workspace-task-title-input:focus,
+.workspace-task-description-input:focus {
+  border-color: hsl(var(--ring));
+  box-shadow: 0 0 0 4px hsl(var(--ring) / .14);
 }
 
 .task-modal-form textarea {
@@ -2267,6 +2318,26 @@ html[data-theme="dark"] .workspace-rail-logout:focus-visible {
 
   .workspace-modal-actions button {
     width: 100%;
+  }
+
+  .workspace-task-title-input {
+    width: 100%;
+    min-width: 0;
+    font-size: 20px;
+  }
+
+  .workspace-task-modal-header {
+    flex-wrap: wrap;
+  }
+
+  .workspace-task-modal-title-area {
+    min-width: 0;
+    flex: 1 1 100%;
+  }
+
+  .workspace-task-modal-actions {
+    width: 100%;
+    justify-content: flex-end;
   }
 }
 

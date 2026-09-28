@@ -17,7 +17,6 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { MagicCard } from "../../components/ui/magic-card";
-import { ShimmerButton } from "../../components/ui/shimmer-button";
 import { Button } from "@/components/ui/button";
 import { BlurFade } from "@/components/ui/blur-fade";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -46,6 +45,15 @@ type Task = {
   assignee_id?: string;
   label_ids?: string[];
   due_date?: string;
+};
+type TaskEditDraft = {
+  title: string;
+  description: string;
+  status: Status;
+  priority: Priority;
+  assignee_id: string;
+  label_ids: string[];
+  due_date: string;
 };
 type TaskComment = { id: string; task_id: string; author_id: string; body: string; created_at: string };
 type TaskSubtask = { id: string; task_id: string; title: string; done: boolean; position: number; created_at: string };
@@ -90,7 +98,7 @@ const labelPillClasses: Record<LabelColor, string> = {
 };
 
 const labelPillBase = "task-label-pill inline-flex min-h-6 max-w-full items-center overflow-hidden whitespace-nowrap rounded-md px-2 py-[3px] text-xs font-bold leading-[1.3] text-ellipsis";
-const labelOptionClass = "m-0 flex min-h-11 min-w-0 cursor-pointer items-center justify-start gap-2 text-xs font-medium text-foreground";
+const labelOptionClass = "task-label-option m-0 flex min-h-11 min-w-0 cursor-pointer items-center justify-start gap-2 text-xs font-medium text-foreground";
 const labelCheckboxClass = "m-0 size-5 shrink-0 accent-primary";
 const labelMenuClass = "absolute left-0 top-[calc(100%+6px)] z-20 grid w-[min(340px,calc(100vw-48px))] gap-3 rounded-[11px] border border-border bg-card p-3 shadow-[0_24px_80px_hsl(var(--foreground)/0.15)] sm:w-[min(420px,calc(100vw-64px))]";
 const labelSummaryClass = "flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-lg border border-border bg-card px-3 text-xs font-bold text-foreground marker:content-none focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-ring";
@@ -219,12 +227,12 @@ function LabelSelector({
   }
 
   return (
-    <details className="relative w-full">
+    <details className="grid min-w-0 gap-2">
       <summary className={cn(labelSummaryClass, "w-full justify-between [&::-webkit-details-marker]:hidden after:content-['⌄'] after:text-sm after:text-muted-foreground")}>
         <span>Etiquetas</span>
         <small>{selectedIDs.length ? `${selectedIDs.length} selecionada${selectedIDs.length === 1 ? "" : "s"}` : "Adicionar"}</small>
       </summary>
-      <div className={cn(labelMenuClass, "w-[min(360px,calc(100vw-48px))]") }>
+      <div className="grid min-w-0 w-full gap-3 rounded-[11px] border border-border bg-card p-3 shadow-sm">
         <div className="grid max-h-[190px] gap-1.5 overflow-y-auto">
           {labels.map((label) => (
             <label className={labelOptionClass} key={label.id}>
@@ -268,9 +276,9 @@ function LabelSelector({
               <option value={option.value} key={option.value}>{option.label}</option>
             ))}
           </select>
-          <button className="col-span-full min-h-11 rounded-lg border border-border bg-secondary px-2.5 text-xs font-bold text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-55" type="button" onClick={() => void createLabel()} disabled={!name.trim() || creating}>
+          <Button className="col-span-full min-h-11 rounded-lg text-xs" variant="secondary" type="button" onClick={() => void createLabel()} disabled={!name.trim() || creating}>
             {creating ? "Criando" : "Criar etiqueta"}
-          </button>
+          </Button>
         </div>
       </div>
     </details>
@@ -347,14 +355,10 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
   const [taskPriority, setTaskPriority] = useState<Priority>("medium");
   const [taskAssignee, setTaskAssignee] = useState("");
   const [taskLabelIDs, setTaskLabelIDs] = useState<string[]>([]);
-  const [editTaskTitle, setEditTaskTitle] = useState("");
-  const [editTaskDescription, setEditTaskDescription] = useState("");
-  const [editTaskDueDate, setEditTaskDueDate] = useState("");
-  const [editTaskStatus, setEditTaskStatus] = useState<Status>("backlog");
-  const [editTaskPriority, setEditTaskPriority] = useState<Priority>("medium");
-  const [editTaskAssignee, setEditTaskAssignee] = useState("");
-  const [editTaskLabelIDs, setEditTaskLabelIDs] = useState<string[]>([]);
-  const [taskModal, setTaskModal] = useState<"create" | "view" | "edit" | null>(
+  const [taskEditDraft, setTaskEditDraft] = useState<TaskEditDraft | null>(null);
+  const [isEditingTask, setIsEditingTask] = useState(false);
+  const [taskEditSaving, setTaskEditSaving] = useState(false);
+  const [taskModal, setTaskModal] = useState<"create" | "view" | null>(
     null,
   );
   const [viewingTask, setViewingTask] = useState<Task | null>(null);
@@ -667,23 +671,6 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
     }
   }
 
-  async function updateTask(task: Task, changes: Partial<Task>) {
-    if (!token) return;
-    try {
-      const response = await taskboardFetch<{ task: Task }>(
-        `/api/tasks/${task.id}`,
-        token,
-        { method: "PATCH", body: JSON.stringify(changes) },
-      );
-      setTasks((current) =>
-        current.map((item) => (item.id === task.id ? response.task : item)),
-      );
-      setViewingTask((current) => current?.id === task.id ? response.task : current);
-    } catch (reason) {
-      handleError(reason);
-    }
-  }
-
   function handleTaskDragStart(event: DragEvent<HTMLElement>, task: Task) {
     if (isReadOnly) {
       event.preventDefault();
@@ -754,25 +741,29 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
   }
 
   function startTaskEdit(task: Task) {
-    setEditTaskTitle(task.title);
-    setEditTaskDescription(task.description);
-    setEditTaskDueDate(task.due_date || "");
-    setEditTaskStatus(task.status);
-    setEditTaskPriority(task.priority);
-    setEditTaskAssignee(task.assignee_id || "");
-    setEditTaskLabelIDs(task.label_ids || []);
+    if (taskModal !== "view" || viewingTask?.id !== task.id) {
+      openTaskView(task);
+    }
+    setTaskEditDraft({
+      title: task.title,
+      description: task.description,
+      due_date: task.due_date || "",
+      status: task.status,
+      priority: task.priority,
+      assignee_id: task.assignee_id || "",
+      label_ids: task.label_ids || [],
+    });
+    setIsEditingTask(true);
     setViewingTask(task);
-    setTaskModal("edit");
   }
 
   function cancelTaskEdit() {
-    setEditTaskTitle("");
-    setEditTaskDescription("");
-    setTaskModal(null);
-    setViewingTask(null);
+    setTaskEditDraft(null);
+    setIsEditingTask(false);
   }
 
   function openTaskCreate() {
+    cancelTaskEdit();
     setTaskTitle("");
     setTaskDescription("");
     setTaskDueDate("");
@@ -784,6 +775,8 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
   }
 
   function openTaskView(task: Task) {
+    setTaskEditDraft(null);
+    setIsEditingTask(false);
     setViewingTask(task);
     setTaskModal("view");
     setTaskComments([]);
@@ -810,12 +803,14 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
     taskDetailRequest.current += 1;
     setTaskModal(null);
     setViewingTask(null);
+    setTaskEditDraft(null);
+    setIsEditingTask(false);
     setTaskDetailLoading(false);
   }
 
-  async function saveTask(event: FormEvent<HTMLFormElement>, task: Task) {
-    event.preventDefault();
-    if (!token || !editTaskTitle.trim()) return;
+  async function saveTask(task: Task) {
+    if (!token || !taskEditDraft?.title.trim() || taskEditSaving) return;
+    setTaskEditSaving(true);
     try {
       const response = await taskboardFetch<{ task: Task }>(
         `/api/tasks/${task.id}`,
@@ -823,13 +818,13 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
         {
           method: "PATCH",
           body: JSON.stringify({
-            title: editTaskTitle,
-            description: editTaskDescription,
-            status: editTaskStatus,
-            priority: editTaskPriority,
-            assignee_id: editTaskAssignee,
-            label_ids: editTaskLabelIDs,
-            due_date: editTaskDueDate,
+            title: taskEditDraft.title,
+            description: taskEditDraft.description,
+            status: taskEditDraft.status,
+            priority: taskEditDraft.priority,
+            assignee_id: taskEditDraft.assignee_id,
+            label_ids: taskEditDraft.label_ids,
+            due_date: taskEditDraft.due_date,
           }),
         },
       );
@@ -840,6 +835,8 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
       cancelTaskEdit();
     } catch (reason) {
       handleError(reason);
+    } finally {
+      setTaskEditSaving(false);
     }
   }
 
@@ -1094,16 +1091,13 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                     </button>
                   </div>
                 ) : null}
-                <ShimmerButton
+                <Button
                   className="workspace-primary-action new-project-submit"
                   type="submit"
-                  shimmerColor="#ffffff"
-                  background="hsl(var(--primary))"
-                  borderRadius="10px"
                 >
                   <WorkspaceIcon name="plus" />
                   Criar projeto
-                </ShimmerButton>
+                </Button>
               </form>
             </div>
           ) : loading ? (
@@ -1212,9 +1206,10 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                   <span>{view === "board" ? "Organize o trabalho da equipe por etapa. Arraste as tarefas para mover." : view === "backlog" ? "Consulte e filtre as tarefas agrupadas por etapa." : "Acompanhe o progresso, os prazos e a distribuição do trabalho."}</span>
                 </div>
                 <div className="workspace-toolbar-actions">
-                  <ShimmerButton
+                  <Button
                     ref={taskDialogTriggerRef}
                     className="workspace-primary-action"
+                    variant="default"
                     type="button"
                     onClick={openTaskCreate}
                     disabled={isReadOnly}
@@ -1223,13 +1218,10 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                         ? "Seu acesso permite apenas visualização"
                         : "Adicionar nova tarefa"
                     }
-                    shimmerColor="#ffffff"
-                    background="var(--button)"
-                    borderRadius="10px"
                   >
                     <WorkspaceIcon name="plus" />
                     Nova tarefa
-                  </ShimmerButton>
+                  </Button>
                   <Button
                     variant="outline"
                     className="workspace-secondary-action"
@@ -1346,7 +1338,7 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                         return (
                           <article
                             className={cn(
-                              "kanban-card min-w-0 w-full max-w-full overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm transition-[transform,border-color,box-shadow,opacity] duration-300 hover:-translate-y-0.5 hover:border-input hover:shadow-md focus-within:-translate-y-0.5 focus-within:border-input focus-within:shadow-md",
+                              "kanban-card relative min-w-0 w-full max-w-full overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm transition-[transform,border-color,box-shadow,opacity] duration-300 hover:-translate-y-0.5 hover:border-input hover:shadow-md focus-within:-translate-y-0.5 focus-within:border-input focus-within:shadow-md",
                               !isReadOnly && "cursor-grab active:cursor-grabbing",
                               draggedTaskId === task.id && "rotate-1 scale-[0.98] opacity-55",
                               movingTaskId === task.id && "pointer-events-none opacity-65",
@@ -1363,36 +1355,21 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-8 rounded-lg px-2.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                                className="relative z-20 h-8 rounded-lg px-2.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
                                 type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  startTaskEdit(task);
-                                }}
+                                onClick={() => startTaskEdit(task)}
                                 disabled={isReadOnly}
                               >
                                 Editar
                               </Button>
                             </div>
-                            <button
-                              className="mt-2.5 grid min-h-10 w-full items-center rounded-md border-0 bg-transparent p-0 text-left text-inherit outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                              type="button"
-                              onClick={() => openTaskView(task)}
-                            >
+                            <div className="mt-2.5 grid min-h-10 w-full items-center">
                               <h3 className="m-0 text-base leading-snug font-bold">{task.title}</h3>
-                            </button>
+                            </div>
                             <LabelPills labels={labels} labelIDs={task.label_ids} limit={3} />
-                            {task.description ? (
-                              <MarkdownPreview value={task.description} />
-                            ) : (
-                              <p className="mb-2 text-xs text-muted-foreground">
-                                Sem descrição adicionada.
-                              </p>
-                            )}
                             {assignedMember || task.due_date ? (
                               <div
                                 className="mt-3 flex items-center justify-between gap-2 border-t border-border/70 pt-2.5 text-xs"
-                                onClick={(event) => event.stopPropagation()}
                               >
                                 {assignedMember ? (
                                   <div
@@ -1434,6 +1411,13 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                                 ) : null}
                               </div>
                             ) : null}
+                            <button
+                              className="absolute inset-0 z-10 size-full rounded-xl border-0 bg-transparent p-0 text-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                              type="button"
+                              draggable={false}
+                              onClick={() => openTaskView(task)}
+                              aria-label={`Abrir tarefa: ${task.title}`}
+                            />
                           </article>
                         );
                       })}
@@ -1587,41 +1571,71 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
               taskDialogTriggerRef.current?.focus();
             }}
           >
-            <div className="mb-4 flex items-start justify-between gap-4 sm:mb-6">
-              <div>
+            <div className="workspace-task-modal-header mb-4 flex items-start justify-between gap-4 sm:mb-6">
+              <div className="workspace-task-modal-title-area">
                 <span className="workspace-kicker">
                   {taskModal === "create"
                     ? "Nova tarefa"
-                    : taskModal === "edit"
+                    : isEditingTask
                       ? "Editar tarefa"
                       : "Detalhes da tarefa"}
                 </span>
-                <h2 className="m-0 max-w-[min(800px,calc(100vw-120px))] text-2xl leading-tight font-bold tracking-tight text-foreground sm:text-[28px]" id="workspace-task-modal-title">
-                  {taskModal === "create"
-                    ? "Adicionar tarefa"
-                    : taskModal === "edit"
-                      ? "Atualizar tarefa"
-                      : viewingTask?.title}
-                </h2>
+                {taskModal === "create" ? (
+                  <h2 className="m-0 max-w-[min(800px,calc(100vw-120px))] text-2xl leading-tight font-bold tracking-tight text-foreground sm:text-[28px]" id="workspace-task-modal-title">Adicionar tarefa</h2>
+                ) : isEditingTask ? (
+                  <>
+                    <h2 className="sr-only" id="workspace-task-modal-title">Editar tarefa</h2>
+                    <input
+                      className="workspace-task-title-input"
+                      value={taskEditDraft?.title || ""}
+                      onChange={(event) => setTaskEditDraft((draft) => draft ? { ...draft, title: event.target.value } : draft)}
+                      aria-label="Título da tarefa"
+                      autoFocus
+                      required
+                    />
+                  </>
+                ) : (
+                  <h2 className="m-0 max-w-[min(800px,calc(100vw-120px))] text-2xl leading-tight font-bold tracking-tight text-foreground sm:text-[28px]" id="workspace-task-modal-title">{viewingTask?.title}</h2>
+                )}
               </div>
-              <Button
-                variant="outline"
-                size="icon"
-                className="size-10 shrink-0 rounded-lg text-muted-foreground hover:text-foreground"
-                type="button"
-                onClick={closeTaskModal}
-                aria-label="Fechar janela"
-                title="Fechar"
-              >
-                <WorkspaceIcon name="close" />
-              </Button>
+              <div className="workspace-task-modal-actions flex shrink-0 items-center gap-2">
+                {isEditingTask && viewingTask ? (
+                  <>
+                    <Button variant="outline" size="sm" type="button" onClick={cancelTaskEdit} disabled={taskEditSaving}>Cancelar</Button>
+                    <Button size="sm" type="button" onClick={() => void saveTask(viewingTask)} disabled={taskEditSaving || !taskEditDraft?.title.trim()}>
+                      {taskEditSaving ? "Salvando…" : "Salvar alterações"}
+                    </Button>
+                  </>
+                ) : null}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-10 rounded-lg text-muted-foreground hover:text-foreground"
+                  type="button"
+                  onClick={closeTaskModal}
+                  aria-label="Fechar janela"
+                  title="Fechar"
+                >
+                  <WorkspaceIcon name="close" />
+                </Button>
+              </div>
             </div>
             {taskModal === "view" && viewingTask ? (
               <div className="grid items-start gap-[18px] sm:grid-cols-[minmax(0,1fr)_250px] lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-7">
                 <div className="grid min-w-0 gap-6">
                   <div>
-                    <header className="mb-1.5 flex items-center justify-between gap-3"><h3 className="m-0 text-[15px]">Descrição</h3>{!isReadOnly ? <Button variant="link" size="sm" className="h-8" type="button" onClick={() => startTaskEdit(viewingTask)}>Editar</Button> : null}</header>
-                    <div className="m-0 min-h-12 border-0 bg-transparent px-0 py-2"><MarkdownPreview value={viewingTask.description} emptyText="Adicionar descrição" /></div>
+                    <header className="mb-1.5"><h3 className="m-0 text-[15px]">Descrição</h3></header>
+                    {isEditingTask ? (
+                      <textarea
+                        className="workspace-task-description-input"
+                        value={taskEditDraft?.description || ""}
+                        onChange={(event) => setTaskEditDraft((draft) => draft ? { ...draft, description: event.target.value } : draft)}
+                        aria-label="Descrição da tarefa"
+                        rows={5}
+                      />
+                    ) : (
+                      <div className="m-0 min-h-12 border-0 bg-transparent px-0 py-2"><MarkdownPreview value={viewingTask.description} emptyText="Adicionar descrição" /></div>
+                    )}
                   </div>
                   <section className="grid gap-3 border-t border-border pt-[18px]">
                     <header className="flex items-center justify-between gap-3"><div className="grid gap-1"><h3 className="m-0 text-[15px]">Anexos</h3><small className="text-xs text-muted-foreground">{taskAttachments.length} {taskAttachments.length === 1 ? "arquivo" : "arquivos"}</small></div>{!isReadOnly ? <label className={cn("relative inline-flex min-h-9 cursor-pointer items-center rounded-lg border border-border bg-card px-3 text-xs font-semibold", taskDetailSaving && "pointer-events-none opacity-55")}>+ Adicionar anexo<input className="absolute inset-0 size-full cursor-pointer opacity-0" type="file" onChange={uploadTaskAttachment} disabled={taskDetailSaving} aria-label="Adicionar anexo à tarefa" /></label> : null}</header>
@@ -1638,13 +1652,36 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                     {!isReadOnly ? <form className="grid gap-2 rounded-[10px] border border-border p-3" onSubmit={addTaskComment}><textarea className="w-full rounded-lg border border-border bg-card px-3 py-2.5 text-[13px] text-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20" value={taskCommentDraft} onChange={(event) => setTaskCommentDraft(event.target.value)} placeholder="Escreva um comentário…" aria-label="Novo comentário" maxLength={5000} rows={3} /><div className="flex items-center justify-between gap-3 max-sm:flex-col max-sm:items-start"><small className="text-xs text-muted-foreground">Comente para compartilhar uma atualização com a equipe.</small><Button type="submit" disabled={taskDetailSaving || !taskCommentDraft.trim()}>Comentar</Button></div></form> : null}
                   </section>
                 </div>
-                <aside className="order-first grid gap-4 rounded-[10px] border border-border bg-muted/20 p-4 sm:order-none" aria-label="Informações da tarefa">
-                  <header className="flex items-center justify-between border-b border-border pb-3"><h3 className="m-0 text-[15px]">Informações</h3>{!isReadOnly ? <Button variant="link" size="sm" className="h-8" type="button" onClick={() => startTaskEdit(viewingTask)} aria-label="Editar todos os campos">Editar</Button> : null}</header>
-                  <label className="grid gap-1.5 text-xs text-muted-foreground">Status<select className="min-h-[38px] w-full rounded-md border border-border bg-card px-2 text-[13px] text-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-75" value={viewingTask.status} disabled={isReadOnly} onChange={(event) => void updateTask(viewingTask, { status: event.target.value as Status })}>{columns.map((column) => <option value={column.status} key={column.status}>{column.label}</option>)}</select></label>
-                  <label className="grid gap-1.5 text-xs text-muted-foreground">Responsável<select className="min-h-[38px] w-full rounded-md border border-border bg-card px-2 text-[13px] text-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-75" value={viewingTask.assignee_id || ""} disabled={isReadOnly} onChange={(event) => void updateTask(viewingTask, { assignee_id: event.target.value })}><option value="">Sem responsável</option>{members.map((member) => <option value={member.id} key={member.id}>{member.alias || member.email}</option>)}</select></label>
-                  <label className="grid gap-1.5 text-xs text-muted-foreground">Prioridade<select className="min-h-[38px] w-full rounded-md border border-border bg-card px-2 text-[13px] text-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-75" value={viewingTask.priority} disabled={isReadOnly} onChange={(event) => void updateTask(viewingTask, { priority: event.target.value as Priority })}><option value="low">Baixa</option><option value="medium">Média</option><option value="high">Alta</option></select></label>
-                  <label className="grid gap-1.5 text-xs text-muted-foreground">Prazo<input className="min-h-[38px] w-full rounded-md border border-border bg-card px-2 text-[13px] text-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-75" type="date" value={viewingTask.due_date || ""} disabled={isReadOnly} onChange={(event) => void updateTask(viewingTask, { due_date: event.target.value })} /></label>
-                  <div className="grid gap-2 text-xs text-muted-foreground"><span>Etiquetas</span><LabelSelector labels={labels} selectedIDs={viewingTask.label_ids || []} onChange={(ids) => void updateTask(viewingTask, { label_ids: ids })} onCreateLabel={createLabel} disabled={isReadOnly} /></div>
+                <aside className="order-first grid min-w-0 gap-4 rounded-[10px] border border-border bg-muted/20 p-4 sm:order-none" aria-label="Informações da tarefa">
+                  <header className="flex items-center justify-between border-b border-border pb-3"><h3 className="m-0 text-[15px]">Informações</h3>{!isReadOnly && !isEditingTask ? <Button variant="link" size="sm" className="h-8" type="button" onClick={() => startTaskEdit(viewingTask)} aria-label="Editar todos os campos">Editar</Button> : null}</header>
+                  <div className="grid gap-4">
+                    <div className="grid gap-1.5 text-xs text-muted-foreground">
+                      <span>Status</span>
+                      {isEditingTask ? <select className="min-h-[38px] w-full min-w-0 rounded-md border border-border bg-card px-2 text-[13px] text-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20" value={taskEditDraft?.status || viewingTask.status} onChange={(event) => setTaskEditDraft((draft) => draft ? { ...draft, status: event.target.value as Status } : draft)} aria-label="Status">{columns.map((column) => <option value={column.status} key={column.status}>{column.label}</option>)}</select> : <strong className="text-[13px] font-semibold text-foreground">{columns.find((column) => column.status === viewingTask.status)?.label}</strong>}
+                    </div>
+                    <div className="grid gap-1.5 text-xs text-muted-foreground">
+                      <span>Responsável</span>
+                      {isEditingTask ? <select className="min-h-[38px] w-full min-w-0 rounded-md border border-border bg-card px-2 text-[13px] text-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20" value={taskEditDraft?.assignee_id || ""} onChange={(event) => setTaskEditDraft((draft) => draft ? { ...draft, assignee_id: event.target.value } : draft)} aria-label="Responsável"><option value="">Sem responsável</option>{members.map((member) => <option value={member.id} key={member.id}>{member.alias || member.email}</option>)}</select> : <strong className="truncate text-[13px] font-semibold text-foreground">{members.find((member) => member.id === viewingTask.assignee_id)?.alias || members.find((member) => member.id === viewingTask.assignee_id)?.email || "Sem responsável"}</strong>}
+                    </div>
+                    <div className="grid gap-1.5 text-xs text-muted-foreground">
+                      <span>Prioridade</span>
+                      {isEditingTask ? <select className="min-h-[38px] w-full min-w-0 rounded-md border border-border bg-card px-2 text-[13px] text-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20" value={taskEditDraft?.priority || viewingTask.priority} onChange={(event) => setTaskEditDraft((draft) => draft ? { ...draft, priority: event.target.value as Priority } : draft)} aria-label="Prioridade"><option value="low">Baixa</option><option value="medium">Média</option><option value="high">Alta</option></select> : <PriorityPill priority={viewingTask.priority} />}
+                    </div>
+                    <div className="grid gap-1.5 text-xs text-muted-foreground">
+                      <span>Prazo</span>
+                      {isEditingTask ? <input className="min-h-[38px] w-full min-w-0 rounded-md border border-border bg-card px-2 text-[13px] text-foreground outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20" type="date" value={taskEditDraft?.due_date || ""} onChange={(event) => setTaskEditDraft((draft) => draft ? { ...draft, due_date: event.target.value } : draft)} aria-label="Prazo" /> : <strong className="text-[13px] font-semibold text-foreground">{viewingTask.due_date ? new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "short", year: "numeric" }).format(new Date(`${viewingTask.due_date}T12:00:00`)) : "Sem prazo"}</strong>}
+                    </div>
+                    <div className="grid min-w-0 gap-2 text-xs text-muted-foreground">
+                      <span>Etiquetas</span>
+                      <LabelSelector
+                        labels={labels}
+                        selectedIDs={isEditingTask ? taskEditDraft?.label_ids || [] : viewingTask.label_ids || []}
+                        onChange={(ids) => setTaskEditDraft((draft) => draft ? { ...draft, label_ids: ids } : draft)}
+                        onCreateLabel={createLabel}
+                        disabled={!isEditingTask || isReadOnly}
+                      />
+                    </div>
+                  </div>
                 </aside>
               </div>
             ) : null}
@@ -1734,103 +1771,6 @@ export default function WorkspacePage({ view = "board" }: { view?: BoardView }) 
                   </button>
                   <button className="edit-save-button" type="submit">
                     Criar tarefa
-                  </button>
-                </div>
-              </form>
-            ) : null}
-            {taskModal === "edit" && viewingTask ? (
-              <form
-                className="task-modal-form"
-                onSubmit={(event) => void saveTask(event, viewingTask)}
-              >
-                <label>
-                  Título
-                  <input
-                    value={editTaskTitle}
-                    onChange={(event) => setEditTaskTitle(event.target.value)}
-                    aria-label="Título da tarefa"
-                    autoFocus
-                    required
-                  />
-                </label>
-                <label>
-                  Descrição
-                  <textarea
-                    value={editTaskDescription}
-                    onChange={(event) =>
-                      setEditTaskDescription(event.target.value)
-                    }
-                    placeholder="Descrição em Markdown"
-                    aria-label="Descrição da tarefa"
-                    rows={5}
-                  />
-                </label>
-                <LabelSelector
-                  labels={labels}
-                  selectedIDs={editTaskLabelIDs}
-                  onChange={setEditTaskLabelIDs}
-                  onCreateLabel={createLabel}
-                />
-                <div className="task-modal-fields">
-                  <label>
-                    Prazo
-                    <input type="date" value={editTaskDueDate} onChange={(event) => setEditTaskDueDate(event.target.value)} />
-                  </label>
-                  <label>
-                    Status
-                    <select
-                      value={editTaskStatus}
-                      aria-label="Status"
-                      onChange={(event) =>
-                        setEditTaskStatus(event.target.value as Status)
-                      }
-                    >
-                      <option value="backlog">Backlog</option>
-                      <option value="todo">A fazer</option>
-                      <option value="in_progress">Em andamento</option>
-                      <option value="done">Concluído</option>
-                    </select>
-                  </label>
-                  <label>
-                    Prioridade
-                    <select
-                      value={editTaskPriority}
-                      onChange={(event) =>
-                        setEditTaskPriority(event.target.value as Priority)
-                      }
-                    >
-                      <option value="low">Baixa</option>
-                      <option value="medium">Média</option>
-                      <option value="high">Alta</option>
-                    </select>
-                  </label>
-                  <label>
-                    Responsável
-                    <select
-                      value={editTaskAssignee}
-                      onChange={(event) =>
-                        setEditTaskAssignee(event.target.value)
-                      }
-                    >
-                      <option value="">Sem responsável</option>
-                      {members.map((member) => (
-                        <option value={member.id} key={member.id}>
-                          {member.alias || member.email}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                <div className="workspace-modal-actions">
-                  <button
-                    className="edit-cancel-button"
-                    type="button"
-                    onClick={closeTaskModal}
-                  >
-                    Cancelar
-                  </button>
-                  <button className="edit-save-button" type="submit">
-                    Salvar alterações
                   </button>
                 </div>
               </form>

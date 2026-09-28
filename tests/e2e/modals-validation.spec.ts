@@ -159,7 +159,7 @@ test.describe("Validação de modais e cascata CSS", () => {
     await expect(dialog).toBeHidden();
   });
 
-  test("Modal de editar tarefa: abre centralizado e fecha", async ({ page }) => {
+  test("Editar tarefa mantém o modal de visualização e permite cancelar", async ({ page }) => {
     await mockWorkspaceWithLeads(page);
     await page.goto("/workspace/project-1");
 
@@ -169,9 +169,19 @@ test.describe("Validação de modais e cascata CSS", () => {
     const dialog = page.getByRole("dialog");
     await verifyModalPositionAndOverlay(page, dialog);
     await expect(dialog.getByLabel("Título da tarefa")).toHaveValue(tasks[0].title);
+    await expect(dialog.getByRole("heading", { name: "Anexos" })).toBeVisible();
+    const labelSelector = dialog.locator("aside details");
+    await labelSelector.locator("summary").click();
+    const labelCheckbox = dialog.getByRole("checkbox", { name: "Prioridade" });
+    await expect(labelCheckbox).toBeVisible();
+    expect((await labelCheckbox.boundingBox())?.width).toBeLessThan(32);
+    await labelCheckbox.uncheck();
 
     const cancelBtn = dialog.getByRole("button", { name: "Cancelar" });
     await cancelBtn.click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("heading", { name: tasks[0].title })).toBeVisible();
+    await dialog.getByRole("button", { name: "Fechar janela" }).click();
     await expect(dialog).toBeHidden();
   });
 
